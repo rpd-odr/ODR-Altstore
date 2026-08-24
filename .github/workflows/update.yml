@@ -1,20 +1,21 @@
-name: Update apps
+name: Update IPA source
 
 on:
   push:
     branches: [main]
     paths:
       - '.github/workflows/update.yml'
-      - 'apps.json'
-  workflow_dispatch:
+      - 'sources.json'
+      - 'scripts/**'
   schedule:
     - cron: '17 */6 * * *'
+  workflow_dispatch:
 
 permissions:
   contents: write
 
 concurrency:
-  group: update-apps
+  group: update-ipa-source
   cancel-in-progress: false
 
 jobs:
@@ -23,39 +24,29 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.x'
-      - name: Update source from official GitHub releases
+
+      - name: Install dependencies
+        run: python -m pip install --disable-pip-version-check requests
+
+      - name: Mirror latest upstream IPA releases
         env:
           GH_TOKEN: ${{ github.token }}
-        run: |
-          python <<'PY'
-          import json, os, urllib.request
-          from pathlib import Path
-          OUT=Path('apps.json'); API='https://api.github.com'
-          headers={'Accept':'application/vnd.github+json','User-Agent':'ODR-Altstore-Updater'}
-          if os.environ.get('GH_TOKEN'): headers['Authorization']=f'Bearer {os.environ["GH_TOKEN"]}'
-          def get(url):
-              with urllib.request.urlopen(urllib.request.Request(url,headers=headers)) as r: return json.load(r)
-          def latest(repo): return get(f'{API}/repos/{repo}/releases/latest')
-          def ipa(rel):
-              return next((a for a in rel.get('assets',[]) if a.get('name','').lower().endswith('.ipa')),None)
-          source=json.loads(OUT.read_text()); apps={a['bundleIdentifier']:a for a in source.get('apps',[])}
-          def update(repo,bid,meta):
-              rel=latest(repo); asset=ipa(rel)
-              if not asset: print(f'{meta["name"]}: no IPA asset, skipped'); return
-              app=dict(meta); app.update(downloadURL=asset['browser_download_url'],version=rel.get('tag_name','').lstrip('v'),versionDate=rel.get('published_at','')[:10],versionDescription=rel.get('body','')[:2000]); apps[bid]=app
-              print(f'{meta["name"]}: {rel.get("tag_name")} -> {asset["name"]}')
-          update('Termix-SSH/Mobile','com.karmaa.termix',{'name':'Termix','bundleIdentifier':'com.karmaa.termix','developerName':'Termix-SSH','subtitle':'SSH, SFTP, RDP, VNC and server management','localizedDescription':'Official Termix mobile client. Requires a compatible Termix Server.','iconURL':'https://raw.githubusercontent.com/Termix-SSH/Mobile/main/assets/images/icon.png','tintColor':'0c0d0b'})
-          update('SideloadLabs/EeveeSpotifyReincarnated','com.spotify.client',{'name':'EeveeSpotifyReincarnated','bundleIdentifier':'com.spotify.client','developerName':'SideloadLabs / EeveeSpotify contributors','subtitle':'Spotify with EeveeSpotify','localizedDescription':'EeveeSpotify build distributed by the project authors.','iconURL':'https://raw.githubusercontent.com/SideloadLabs/EeveeSpotifyReincarnated/main/assets/icon.png'})
-          update('faroukbmiled/RyukGram','com.burbn.instagram',{'name':'RyukGram','bundleIdentifier':'com.burbn.instagram','developerName':'faroukbmiled','subtitle':'Instagram with RyukGram','localizedDescription':'RyukGram sideloaded build from the official project release.'})
-          source['apps']=list(apps.values()); OUT.write_text(json.dumps(source,ensure_ascii=False,indent=2)+'\n')
-          PY
-      - name: Commit source changes
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: python scripts/update_apps.py
+
+      - name: Commit generated source and state
         run: |
           git config user.name 'ODR Altstore Bot'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add apps.json
-          if git diff --cached --quiet; then echo 'No changes.'; else git commit -m 'Update apps from upstream GitHub releases'; git push; fi
+          git add apps.json state.json
+          if git diff --cached --quiet; then
+            echo 'No source changes.'
+          else
+            git commit -m 'Update mirrored apps'
+            git push
+          fi
