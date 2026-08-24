@@ -33,7 +33,6 @@ class DecryptDayAdapter(BaseDecryptAdapter):
     @staticmethod
     def _extract_download_url(page_url: str, body: str) -> Optional[str]:
         text = html.unescape(body)
-
         patterns = (
             r"https?://[^\"'<>\s]+/app/id\d+/dl/[^\"'<>\s]+",
             r"(?P<path>/app/id\d+/dl/[^\"'<>\s]+)",
@@ -77,7 +76,12 @@ class DecryptDayAdapter(BaseDecryptAdapter):
         timeout = float(os.getenv("IPA_PROVIDER_TIMEOUT", "30"))
 
         with httpx.Client(timeout=httpx.Timeout(timeout), follow_redirects=True) as client:
-            response = self._request_with_retry(client, page_url, headers=headers)
+            # Call the base implementation explicitly. This keeps the adapter
+            # compatible even if an older BaseDecryptAdapter is loaded by a
+            # runner/cache and avoids depending on inherited method lookup.
+            response = BaseDecryptAdapter._request_with_retry(
+                self, client, page_url, headers=headers
+            )
             try:
                 body = response.text
             finally:
@@ -90,9 +94,6 @@ class DecryptDayAdapter(BaseDecryptAdapter):
                 "Возможна Cloudflare-проверка или изменился HTML страницы."
             )
 
-        # The page is the authoritative source for the current available IPA,
-        # but its HTML may not expose a machine-readable version/build. The
-        # IPA validator later obtains the exact values from Payload/*.app/Info.plist.
         self.resolved_version = "latest"
         self.resolved_build = ""
         return {
