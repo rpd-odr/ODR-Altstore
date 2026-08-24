@@ -42,12 +42,20 @@ class DecryptIPASourceProvider(IPASourceProvider):
             logger.info("[DRY-RUN] Найден IPA URL: %s", sanitize_url(ipa_url))
             return IPAMetadata(bundle_id, display_version, (meta or {}).get("build", "dry-run"), ipa_url, "decrypt_ipa", 0, "dry_run", False)
 
-        # For decrypt.day the page contains a short-lived download URL and may
-        # not expose a machine-readable version. The IPA itself is authoritative.
+        # Some providers (notably decrypt.day) require the same browser/session
+        # context for the final IPA request that was used to obtain the URL.
+        download_headers = None
+        download_cookies = None
+        get_context = getattr(self.adapter, "get_download_context", None)
+        if callable(get_context):
+            download_headers, download_cookies = get_context()
+
         inspection = self.download_and_inspect_ipa(
             ipa_url,
             bundle_id,
             None if requested_version in (None, "latest", "newest") else requested_version,
+            extra_headers=download_headers,
+            cookies=download_cookies,
         )
         return IPAMetadata(
             bundle_id=inspection["bundle_id"], version=inspection["version"], build=inspection["build"],
