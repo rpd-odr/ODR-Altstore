@@ -7,9 +7,9 @@
       "bundleIdentifier": "com.karmaa.termix",
       "developerName": "Termix-SSH",
       "subtitle": "SSH, SFTP, RDP, VNC and server management",
-      "localizedDescription": "Official Termix mobile client. Requires a compatible Termix Server.",
+      "localizedDescription": "Official Termix mobile client.",
       "iconURL": "https://raw.githubusercontent.com/Termix-SSH/Mobile/main/assets/images/icon.png",
-      "assetPattern": "\\.ipa$"
+      "mode": "github-release"
     },
     {
       "id": "eevee",
@@ -18,9 +18,31 @@
       "bundleIdentifier": "com.spotify.client",
       "developerName": "SideloadLabs / EeveeSpotify contributors",
       "subtitle": "Spotify with EeveeSpotify",
-      "localizedDescription": "EeveeSpotify build distributed by its upstream project for supported sideloading methods.",
+      "localizedDescription": "EeveeSpotify build from the upstream project.",
       "iconURL": "https://raw.githubusercontent.com/SideloadLabs/EeveeSpotifyReincarnated/main/Assets.xcassets/AppIcon.appiconset/AppIcon60x60@2x.png",
-      "assetPattern": "\\.ipa$"
+      "mode": "github-release"
+    },
+    {
+      "id": "ytkace",
+      "name": "YTKACE",
+      "repo": "itzzace/ytkace",
+      "bundleIdentifier": "com.google.ios.youtube",
+      "developerName": "itzzace",
+      "subtitle": "YouTube tweak build",
+      "localizedDescription": "YTKACE build pipeline. Upstream workflow requires an input IPA.",
+      "mode": "builder",
+      "watch": "youtube"
+    },
+    {
+      "id": "ryukgram",
+      "name": "RyukGram",
+      "repo": "faroukbmiled/RyukGram",
+      "bundleIdentifier": "com.burbn.instagram",
+      "developerName": "faroukbmiled",
+      "subtitle": "Instagram tweak build",
+      "localizedDescription": "RyukGram build pipeline. Upstream workflow requires an input IPA.",
+      "mode": "builder",
+      "watch": "instagram"
     }
   ]
 }
