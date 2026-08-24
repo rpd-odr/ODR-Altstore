@@ -38,7 +38,6 @@ jobs:
         run: |
           python3 - <<'PY'
           import json, subprocess
-          from pathlib import Path
           data=json.load(open('tweaks.json'))['ytkace']['tweaks']
           for item in data:
               repo=item['repo']
@@ -49,6 +48,12 @@ jobs:
               else:
                   subprocess.run(['git','clone','--depth=1',f'https://github.com/{repo}.git',name],check=True)
           PY
+      - name: Build YTKACE
+        working-directory: ytkace
+        run: |
+          make clean
+          make package FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=rootless DISABLE_ROOTLESS_COMPAT_WARNING=1
+          cp packages/*.deb "$GITHUB_WORKSPACE/ytkace.deb"
       - name: Build configured tweaks
         run: |
           set -euo pipefail
@@ -59,11 +64,12 @@ jobs:
               find "$dir/packages" -maxdepth 1 -type f -name '*.deb' -exec cp {} . \;
             fi
           done
-      - name: Upload tweak packages
+      - name: Upload build packages
         uses: actions/upload-artifact@v4
         with:
           name: ytkace-tweaks
           path: |
+            ytkace.deb
             *.deb
             OpenYouTubeInSafari/OpenYouTubeSafariExtension.appex
 
@@ -96,10 +102,7 @@ jobs:
           pipx install --force https://github.com/asdfzxcvbn/pyzule-rw/archive/main.zip
       - name: Inject YTKACE and configured tweaks
         run: |
-          mkdir deb-root
-          dpkg-deb -x tweaks/*.deb deb-root 2>/dev/null || true
-          DYLIB="$(find deb-root -name YTKACE.dylib -type f | head -1)"
-          [ -n "$DYLIB" ] || { echo '::error::YTKACE.dylib not found'; exit 1; }
+          set -euo pipefail
           VERSION="$(python3 - <<'PY'
           import plistlib, zipfile
           with zipfile.ZipFile('YouTube.ipa') as z:
@@ -108,11 +111,14 @@ jobs:
               print(d.get('CFBundleShortVersionString','unknown'))
           PY
           )"
-          cp YouTube.ipa base.ipa
-          tweaks_args="tweaks/*.deb"
+          tweaks_args="tweaks/ytkace.deb"
+          for f in tweaks/*.deb; do
+            [ "$f" = "tweaks/ytkace.deb" ] && continue
+            tweaks_args="$tweaks_args $f"
+          done
           APPEX="$(find tweaks -name 'OpenYouTubeSafariExtension.appex' -type d | head -1)"
-          if [ -n "$APPEX" ]; then tweaks_args="$tweaks_args $APPEX"; fi
-          cyan -i base.ipa -o "YTKACE_${VERSION}.ipa" -uwef $tweaks_args -n "YTKACE" -b "com.google.ios.youtube"
+          [ -z "$APPEX" ] || tweaks_args="$tweaks_args $APPEX"
+          cyan -i YouTube.ipa -o "YTKACE_${VERSION}.ipa" -uwef $tweaks_args -n "YTKACE" -b "com.google.ios.youtube"
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
       - name: Verify artifact
         run: |
