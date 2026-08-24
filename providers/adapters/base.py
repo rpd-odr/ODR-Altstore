@@ -33,6 +33,52 @@ class BaseDecryptAdapter:
                     pass
         return float(2 ** attempt)
 
+    def _request_with_retry(
+        self,
+        client: httpx.Client,
+        url: str,
+        method: str = "GET",
+        headers: Optional[dict] = None,
+        **kwargs
+    ) -> httpx.Response:
+        """Make an HTTP request with retry logic."""
+        clean_url = sanitize_url(url)
+        
+        for attempt in range(1, self.max_retries + 1):
+            try:
+                response = client.request(method, url, headers=headers, **kwargs)
+                
+                if response.status_code == 429 or response.status_code >= 500:
+                    if attempt < self.max_retries:
+                        delay = self._retry_delay(response, attempt)
+                        logger.warning(
+                            "HTTP %s (%s), retry %s/%s через %.1fs",
+                            response.status_code,
+                            clean_url,
+                            attempt,
+                            self.max_retries,
+                            delay,
+                        )
+                        time.sleep(delay)
+                        continue
+                
+                response.raise_for_status()
+                return response
+            except httpx.RequestError as exc:
+                if attempt >= self.max_retries:
+                    raise ProviderError(f"Ошибка сети ({clean_url}): {exc}") from exc
+                delay = float(2 ** attempt)
+                logger.warning(
+                    "Ошибка сети (%s), retry %s/%s через %.1fs",
+                    clean_url,
+                    attempt,
+                    self.max_retries,
+                    delay,
+                )
+                time.sleep(delay)
+        
+        raise ProviderError(f"Не удалось получить ответ от сервера ({clean_url})")
+
     def resolve_ipa_url(self, bundle_id: str, version: str, timeout: float = 30.0) -> str:
         api_url = os.getenv("IPA_PROVIDER_URL")
         token = os.getenv("IPA_PROVIDER_TOKEN")
