@@ -10,6 +10,7 @@ import providers.adapters
 
 logger = logging.getLogger("DecryptIPAProvider")
 
+
 @ProviderRegistry.register("decrypt_ipa")
 class DecryptIPASourceProvider(IPASourceProvider):
     def __init__(self, adapter=None):
@@ -23,23 +24,43 @@ class DecryptIPASourceProvider(IPASourceProvider):
     def get_latest(self, bundle_id: str, version: str, dry_run: bool = False) -> IPAMetadata:
         logger.info("Запрос IPA: bundle_id=%s version=%s dry_run=%s", bundle_id, version, dry_run)
         ipa_url = self.adapter.resolve_ipa_url(bundle_id, version, timeout=self.timeout)
+
+        # Adapters that resolve a moving "latest" target may expose the actual
+        # version selected from their source. Never validate an IPA against the
+        # literal string "latest".
+        resolved_version = getattr(self.adapter, "resolved_version", version)
+        if not resolved_version or resolved_version in ("latest", "newest"):
+            raise ProviderError("Источник не вернул конкретную версию IPA")
+
         if dry_run:
             logger.info("[DRY-RUN] Найден IPA URL: %s", sanitize_url(ipa_url))
-            return IPAMetadata(bundle_id, version, "dry-run", ipa_url, "decrypt_ipa", 0, "dry_run", False)
+            return IPAMetadata(
+                bundle_id, resolved_version, "dry-run", ipa_url,
+                "decrypt_ipa", 0, "dry_run", False
+            )
 
-        inspection = self.download_and_inspect_ipa(ipa_url, bundle_id, version)
-        return IPAMetadata(
-            bundle_id=inspection["bundle_id"], version=inspection["version"], build=inspection["build"],
-            ipa_url=ipa_url, source="decrypt_ipa", size=inspection["size"],
-            sha256=inspection["sha256"], verified=True,
+        inspection = self.download_and_inspect_ipa(
+            ipa_url, bundle_id, resolved_version
         )
+        return IPAMetadata(
+            bundle_id=inspection["bundle_id"],
+            version=inspection["version"],
+            build=inspection["build"],
+            ipa_url=ipa_url,
+            source="decrypt_ipa",
+            size=inspection["size"],
+            sha256=inspection["sha256"],
+            verified=True,
+        )
+
 
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--bundle-id", required=True)
-    parser.add_argument("--version", required=True)
+    parser.add_argument("--version", default="latest")
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
+
     provider = None
     try:
         provider = ProviderRegistry.get("decrypt_ipa")
@@ -50,6 +71,7 @@ def main():
         if provider:
             provider.log_gh_annotation("error", f"IPA Provider Error: {exc}")
         raise SystemExit(1) from exc
+
 
 if __name__ == "__main__":
     main()
