@@ -1,0 +1,19 @@
+{
+  "ytkace": {
+    "youtubeBundleIdentifier": "com.google.ios.youtube",
+    "tweaks": [
+      {"id": "YTVideoErrorAlert", "repo": "PoomSmart/YTVideoErrorAlert", "strategy": "latest-release"},
+      {"id": "DontEatMyContent", "repo": "therealFoxster/DontEatMyContent", "strategy": "latest-release"},
+      {"id": "Gonerino", "repo": "castdrian/Gonerino", "strategy": "latest-release"},
+      {"id": "YouGetCaption", "repo": "PoomSmart/YouGetCaption", "strategy": "latest-release"},
+      {"id": "YouChooseQuality", "repo": "PoomSmart/YouChooseQuality", "strategy": "latest-release"},
+      {"id": "YouQuality", "repo": "PoomSmart/YouQuality", "strategy": "latest-release"},
+      {"id": "YTABConfig", "repo": "PoomSmart/YTABConfig", "strategy": "latest-release"},
+      {"id": "YTVideoOverlay", "repo": "PoomSmart/YTVideoOverlay", "strategy": "latest-release"},
+      {"id": "YouGroupSettings", "repo": "PoomSmart/YouGroupSettings", "strategy": "latest-release"},
+      {"id": "YouTubeDislikesReturn", "repo": "PoomSmart/Return-YouTube-Dislikes", "strategy": "latest-release"},
+      {"id": "YouPiP", "repo": "PoomSmart/YouPiP", "strategy": "latest-release", "requires": ["YTVideoOverlay"]},
+      {"id": "OpenYouTubeInSafari", "repo": "BillyCurtis/OpenYouTubeSafariExtension", "strategy": "latest-release"}
+    ]
+  }
+}
