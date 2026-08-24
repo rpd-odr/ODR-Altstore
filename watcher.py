@@ -28,6 +28,7 @@ def load_sources_config() -> Dict[str, Dict[str, Any]]:
             "id": app.get("id", app["builder"]),
             "name": app.get("name", app["builder"]),
             "metadata_url": app.get("metadataUrl"),
+            "ipa_adapter": app.get("ipaAdapter"),
         }
     return result
 
@@ -43,6 +44,7 @@ def on_new_version_detected(builder_name: str, detected_version: str = "latest",
         detected_version,
         dry_run=dry_run,
         metadata_url=config.get("metadata_url"),
+        adapter_name=config.get("ipa_adapter"),
     )
 
     if not dry_run and not metadata.verified:
