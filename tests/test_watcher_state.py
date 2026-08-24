@@ -40,7 +40,7 @@ def test_watcher_preserves_existing_state(monkeypatch, tmp_path):
                 verified=True,
             )
 
-    monkeypatch.setattr("watcher.ProviderRegistry.get", lambda _: FakeProvider)
+    monkeypatch.setattr("watcher.ProviderRegistry.get", lambda _: FakeProvider())
     on_new_version_detected("ytkace")
 
     state = json.loads((tmp_path / "state.json").read_text(encoding="utf-8"))
