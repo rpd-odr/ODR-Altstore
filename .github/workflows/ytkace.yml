@@ -13,30 +13,16 @@ on:
 permissions:
   contents: write
 
+env:
+  YTKACE_REPO: https://github.com/itzzace/ytkace.git
+  THEOS: ${{ github.workspace }}/theos
+
 concurrency:
   group: ytkace-build
   cancel-in-progress: true
 
-env:
-  YTKACE_REPO: https://github.com/itzzace/ytkace.git
-
 jobs:
-  resolve-tweaks:
-    runs-on: ubuntu-latest
-    outputs:
-      tweaks_json: ${{ steps.resolve.outputs.tweaks_json }}
-    steps:
-      - uses: actions/checkout@v4
-      - name: Resolve latest tweak releases
-        id: resolve
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-        run: |
-          python -m pip install --quiet httpx
-          python scripts/resolve-tweaks.py ytkace
-
   deb:
-    needs: resolve-tweaks
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -44,27 +30,52 @@ jobs:
         run: git clone --depth=1 "$YTKACE_REPO" ytkace
       - name: Install Theos
         run: bash -c "$(curl -fsSL https://raw.githubusercontent.com/roothide/theos/master/bin/install-theos)"
-      - name: Build rootless package
-        working-directory: ytkace
-        env:
-          THEOS: ${{ github.workspace }}/theos
+      - name: Install common YouTube tweak headers
         run: |
-          make clean
-          make package FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=rootless DISABLE_ROOTLESS_COMPAT_WARNING=1
-          cp packages/*.deb "$GITHUB_WORKSPACE/ytkace.deb"
-      - uses: actions/upload-artifact@v4
+          git clone --depth=1 https://github.com/PoomSmart/YouTubeHeader.git "$THEOS/include/YouTubeHeader"
+          git clone --depth=1 https://github.com/PoomSmart/PSHeader.git "$THEOS/include/PSHeader"
+      - name: Checkout configured tweaks
+        run: |
+          python3 - <<'PY'
+          import json, subprocess
+          from pathlib import Path
+          data=json.load(open('tweaks.json'))['ytkace']['tweaks']
+          for item in data:
+              repo=item['repo']
+              name=item['id']
+              if name == 'OpenYouTubeInSafari':
+                  subprocess.run(['git','clone','--depth=1','--filter=blob:none','--sparse',f'https://github.com/{repo}.git',name],check=True)
+                  subprocess.run(['git','-C',name,'sparse-checkout','set','OpenYouTubeSafariExtension.appex'],check=True)
+              else:
+                  subprocess.run(['git','clone','--depth=1',f'https://github.com/{repo}.git',name],check=True)
+          PY
+      - name: Build configured tweaks
+        run: |
+          set -euo pipefail
+          for dir in YTVideoOverlay YTVideoErrorAlert DontEatMyContent Gonerino YouGetCaption YouChooseQuality YouQuality YTABConfig YouGroupSettings YouTubeDislikesReturn YouPiP; do
+            if [ -d "$dir" ]; then
+              echo "==> Building $dir"
+              make -C "$dir" clean package DEBUG=0 FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=rootless
+              find "$dir/packages" -maxdepth 1 -type f -name '*.deb' -exec cp {} . \;
+            fi
+          done
+      - name: Upload tweak packages
+        uses: actions/upload-artifact@v4
         with:
-          name: ytkace-deb
-          path: ytkace.deb
+          name: ytkace-tweaks
+          path: |
+            *.deb
+            OpenYouTubeInSafari/OpenYouTubeSafariExtension.appex
 
   ipa:
-    needs: [resolve-tweaks, deb]
+    needs: deb
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
-          name: ytkace-deb
+          name: ytkace-tweaks
+          path: tweaks
       - name: Resolve IPA URL
         id: input
         env:
@@ -83,10 +94,10 @@ jobs:
         run: |
           brew install ldid dpkg
           pipx install --force https://github.com/asdfzxcvbn/pyzule-rw/archive/main.zip
-      - name: Inject YTKACE
+      - name: Inject YTKACE and configured tweaks
         run: |
           mkdir deb-root
-          dpkg-deb -x ytkace.deb deb-root
+          dpkg-deb -x tweaks/*.deb deb-root 2>/dev/null || true
           DYLIB="$(find deb-root -name YTKACE.dylib -type f | head -1)"
           [ -n "$DYLIB" ] || { echo '::error::YTKACE.dylib not found'; exit 1; }
           VERSION="$(python3 - <<'PY'
@@ -97,9 +108,16 @@ jobs:
               print(d.get('CFBundleShortVersionString','unknown'))
           PY
           )"
-          bash ytkace/Scripts/sideload-repack.sh YouTube.ipa "$DYLIB" "YTKACE_${VERSION}.ipa"
-          bash ytkace/Tools/verify-artifacts.sh "$DYLIB" "YTKACE_${VERSION}.ipa"
+          cp YouTube.ipa base.ipa
+          tweaks_args="tweaks/*.deb"
+          APPEX="$(find tweaks -name 'OpenYouTubeSafariExtension.appex' -type d | head -1)"
+          if [ -n "$APPEX" ]; then tweaks_args="$tweaks_args $APPEX"; fi
+          cyan -i base.ipa -o "YTKACE_${VERSION}.ipa" -uwef $tweaks_args -n "YTKACE" -b "com.google.ios.youtube"
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+      - name: Verify artifact
+        run: |
+          unzip -t "YTKACE_${VERSION}.ipa" >/dev/null
+          test -s "YTKACE_${VERSION}.ipa"
       - name: Publish ODR release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -107,4 +125,4 @@ jobs:
           TAG="ytkace-$VERSION-${GITHUB_RUN_ID}"
           gh release create "$TAG" "YTKACE_${VERSION}.ipa" --repo "$GITHUB_REPOSITORY" \
             --title "YTKACE YouTube $VERSION" \
-            --notes "Built by ODR from YTKACE upstream source. Latest tweak metadata was resolved automatically before build."
+            --notes "Built by ODR from YTKACE upstream source with configured community tweaks."
