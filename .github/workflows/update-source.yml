@@ -1,0 +1,104 @@
+name: Update app source
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '17 */6 * * *'
+
+permissions:
+  contents: write
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Fetch latest upstream metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .cache
+
+          curl -fsSL -H 'Accept: application/vnd.github+json' \
+            https://api.github.com/repos/Termix-SSH/Mobile/releases/latest \
+            -o .cache/termix-release.json
+
+          curl -fsSL \
+            https://raw.githubusercontent.com/SideloadLabs/SideloasLabs-AltSource/main/apps.json \
+            -o .cache/eevee-source.json
+
+      - name: Build apps.json
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          TERMIX_ASSET=$(jq -r '[.assets[] | select(.name | endswith(".ipa"))] | first | .browser_download_url' .cache/termix-release.json)
+          TERMIX_ASSET_NAME=$(jq -r '[.assets[] | select(.name | endswith(".ipa"))] | first | .name' .cache/termix-release.json)
+          TERMIX_VERSION=$(jq -r '.tag_name | sub("^release-"; "")' .cache/termix-release.json)
+          TERMIX_DATE=$(jq -r '.published_at' .cache/termix-release.json | cut -dT -f1)
+          TERMIX_SIZE=$(jq -r '[.assets[] | select(.name | endswith(".ipa"))] | first | .size' .cache/termix-release.json)
+
+          if [ -z "$TERMIX_ASSET" ] || [ "$TERMIX_ASSET" = "null" ]; then
+            echo "No IPA asset found in latest Termix Mobile release"
+            exit 1
+          fi
+
+          jq --arg url "$TERMIX_ASSET" \
+             --arg version "$TERMIX_VERSION" \
+             --arg date "$TERMIX_DATE" \
+             --arg size "$TERMIX_SIZE" \
+             --arg asset "$TERMIX_ASSET_NAME" \
+             --arg eevee_url "$(jq -r '.apps[] | select(.name == "EeveeSpotifyReincarnated") | .downloadURL' .cache/eevee-source.json)" \
+             --arg eevee_version "$(jq -r '.apps[] | select(.name == "EeveeSpotifyReincarnated") | .version' .cache/eevee-source.json)" \
+             --arg eevee_date "$(jq -r '.apps[] | select(.name == "EeveeSpotifyReincarnated") | .versionDate' .cache/eevee-source.json)" \
+             --arg eevee_desc "$(jq -r '.apps[] | select(.name == "EeveeSpotifyReincarnated") | .localizedDescription' .cache/eevee-source.json)" \
+             --arg eevee_size "$(jq -r '.apps[] | select(.name == "EeveeSpotifyReincarnated") | .size // 0' .cache/eevee-source.json)" \
+             '.apps = [
+               {
+                 name: "Termix",
+                 bundleIdentifier: "com.karmaa.termix",
+                 developerName: "Termix-SSH",
+                 subtitle: "SSH, SFTP, RDP, VNC and server management",
+                 localizedDescription: "Official Termix mobile client. Requires a compatible Termix server.",
+                 downloadURL: $url,
+                 iconURL: "https://raw.githubusercontent.com/Termix-SSH/Mobile/main/assets/images/icon.png",
+                 version: $version,
+                 versionDate: $date,
+                 size: ($size | tonumber),
+                 versionDescription: ("Upstream asset: " + $asset),
+                 tintColor: "0c0d0b"
+               },
+               {
+                 name: "EeveeSpotifyReincarnated",
+                 bundleIdentifier: "com.spotify.client",
+                 developerName: "SideloadLabs",
+                 subtitle: "Spotify with EeveeSpotify",
+                 localizedDescription: $eevee_desc,
+                 downloadURL: $eevee_url,
+                 iconURL: "https://files.catbox.moe/9fgova.JPG",
+                 version: $eevee_version,
+                 versionDate: $eevee_date,
+                 size: ($eevee_size | tonumber),
+                 versionDescription: "Automatically synchronized from the SideloadLabs source.",
+                 tintColor: "1DB954"
+               }
+             ]' apps.json > apps.json.tmp
+
+          mv apps.json.tmp apps.json
+          jq empty apps.json
+
+      - name: Commit changes
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- apps.json; then
+            echo 'No upstream changes.'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add apps.json
+          git commit -m 'Update apps from upstream'
+          git push
