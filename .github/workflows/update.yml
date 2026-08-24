@@ -1,0 +1,130 @@
+name: Update apps
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '17 */6 * * *'
+
+permissions:
+  contents: write
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Update source from official GitHub releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python <<'PY'
+          import json, os, re, subprocess, urllib.request
+          from pathlib import Path
+
+          OUT = Path('apps.json')
+          API = 'https://api.github.com'
+          headers = {'Accept': 'application/vnd.github+json', 'User-Agent': 'ODR-Altstore-Updater'}
+          token = os.environ.get('GH_TOKEN')
+          if token:
+              headers['Authorization'] = f'Bearer {token}'
+
+          def get(url):
+              req = urllib.request.Request(url, headers=headers)
+              with urllib.request.urlopen(req) as r:
+                  return json.load(r)
+
+          def latest_release(repo):
+              return get(f'{API}/repos/{repo}/releases/latest')
+
+          def ipa_asset(release):
+              assets = release.get('assets', [])
+              ipas = [a for a in assets if a.get('name','').lower().endswith('.ipa')]
+              return ipas[0] if ipas else None
+
+          source = json.loads(OUT.read_text())
+          apps = {a['bundleIdentifier']: a for a in source.get('apps', [])}
+
+          # Termix: official GitHub release IPA.
+          rel = latest_release('Termix-SSH/Mobile')
+          asset = ipa_asset(rel)
+          if asset:
+              apps['com.karmaa.termix'] = {
+                  'name': 'Termix',
+                  'bundleIdentifier': 'com.karmaa.termix',
+                  'developerName': 'Termix-SSH',
+                  'subtitle': 'SSH, SFTP, RDP, VNC and server management',
+                  'localizedDescription': 'Official Termix mobile client. Requires a compatible Termix Server.',
+                  'downloadURL': asset['browser_download_url'],
+                  'iconURL': 'https://raw.githubusercontent.com/Termix-SSH/Mobile/main/assets/images/icon.png',
+                  'version': rel.get('tag_name','').lstrip('v'),
+                  'versionDate': rel.get('published_at','')[:10],
+                  'versionDescription': rel.get('body','')[:2000],
+                  'tintColor': '0c0d0b'
+              }
+              print('Termix:', rel.get('tag_name'), asset['name'])
+          else:
+              print('Termix: no IPA asset found in latest release')
+
+          # EeveeSpotify: official GitHub release IPA, no AltStore source involved.
+          rel = latest_release('SideloadLabs/EeveeSpotifyReincarnated')
+          asset = ipa_asset(rel)
+          if asset:
+              apps['com.spotify.client'] = {
+                  'name': 'EeveeSpotifyReincarnated',
+                  'bundleIdentifier': 'com.spotify.client',
+                  'developerName': 'SideloadLabs / EeveeSpotify contributors',
+                  'subtitle': 'Spotify with EeveeSpotify',
+                  'localizedDescription': 'EeveeSpotify build distributed by the project authors.',
+                  'downloadURL': asset['browser_download_url'],
+                  'iconURL': 'https://raw.githubusercontent.com/SideloadLabs/EeveeSpotifyReincarnated/main/assets/icon.png',
+                  'version': rel.get('tag_name','').lstrip('v'),
+                  'versionDate': rel.get('published_at','')[:10],
+                  'versionDescription': rel.get('body','')[:2000]
+              }
+              print('EeveeSpotify:', rel.get('tag_name'), asset['name'])
+          else:
+              print('EeveeSpotify: no IPA asset found in latest release')
+
+          # RyukGram: the repo's latest release normally contains tweak packages,
+          # while a sideloaded IPA is built by its own Action using a user's Instagram IPA.
+          # Only publish it automatically if the upstream release actually contains an IPA.
+          rel = latest_release('faroukbmiled/RyukGram')
+          asset = ipa_asset(rel)
+          if asset:
+              apps['com.burbn.instagram'] = {
+                  'name': 'RyukGram',
+                  'bundleIdentifier': 'com.burbn.instagram',
+                  'developerName': 'faroukbmiled',
+                  'subtitle': 'Instagram with RyukGram',
+                  'localizedDescription': 'RyukGram sideloaded build from the official project release.',
+                  'downloadURL': asset['browser_download_url'],
+                  'version': rel.get('tag_name','').lstrip('v'),
+                  'versionDate': rel.get('published_at','')[:10],
+                  'versionDescription': rel.get('body','')[:2000]
+              }
+              print('RyukGram:', rel.get('tag_name'), asset['name'])
+          else:
+              print('RyukGram: no IPA asset in latest release; skipped (project requires an Instagram IPA to build one)')
+
+          source['apps'] = list(apps.values())
+          OUT.write_text(json.dumps(source, ensure_ascii=False, indent=2) + '\n')
+          PY
+
+      - name: Commit source changes
+        run: |
+          git config user.name 'ODR Altstore Bot'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add apps.json
+          if git diff --cached --quiet; then
+            echo 'No changes.'
+          else
+            git commit -m 'Update apps from upstream GitHub releases'
+            git push
+          fi
