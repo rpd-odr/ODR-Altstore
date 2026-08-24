@@ -1,0 +1,96 @@
+name: Build RyukGram
+
+on:
+  workflow_dispatch:
+    inputs:
+      decrypted_instagram_url:
+        description: URL of the decrypted Instagram IPA to build from
+        required: true
+        type: string
+      target:
+        description: Target Instagram tweak release
+        required: false
+        default: latest
+        type: choice
+        options: [latest, 410]
+  repository_dispatch:
+    types: [ryukgram-build]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ryukgram-build
+  cancel-in-progress: true
+
+env:
+  UPSTREAM_REPO: faroukbmiled/RyukGram
+
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Checkout RyukGram
+        run: git clone --depth=1 "https://github.com/${UPSTREAM_REPO}.git" ryukgram
+      - name: Resolve inputs
+        id: input
+        env:
+          DISPATCH_URL: ${{ github.event.client_payload.decrypted_instagram_url }}
+          MANUAL_URL: ${{ inputs.decrypted_instagram_url }}
+          DISPATCH_TARGET: ${{ github.event.client_payload.target }}
+          MANUAL_TARGET: ${{ inputs.target }}
+        run: |
+          URL="$MANUAL_URL"; [ -n "$URL" ] || URL="$DISPATCH_URL"
+          TARGET="$MANUAL_TARGET"; [ -n "$TARGET" ] || TARGET="${DISPATCH_TARGET:-latest}"
+          [ -n "$URL" ] || { echo '::error::decrypted_instagram_url is required'; exit 1; }
+          echo "url=$URL" >> "$GITHUB_OUTPUT"
+          echo "target=$TARGET" >> "$GITHUB_OUTPUT"
+      - name: Install tooling
+        run: |
+          brew install dpkg
+          pipx install --force https://github.com/asdfzxcvbn/pyzule-rw/archive/main.zip
+          curl -fLo "$HOME/.local/bin/ipapatch" https://github.com/asdfzxcvbn/ipapatch/releases/download/v2.1.3/ipapatch.macos-arm64
+          chmod +x "$HOME/.local/bin/ipapatch"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      - name: Download latest RyukGram release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TARGET: ${{ steps.input.outputs.target }}
+        run: |
+          mkdir -p release-assets packages
+          TAG="$(gh release view --repo "$UPSTREAM_REPO" --json tagName -q .tagName)"
+          if [ "$TARGET" = "410" ]; then PATTERN='RyukGram-410_*_rootless.deb'; else PATTERN='RyukGram_*_rootless.deb'; fi
+          gh release download "$TAG" --repo "$UPSTREAM_REPO" --dir release-assets --pattern "$PATTERN"
+          DEB="$(ls -t release-assets/$PATTERN | head -1)"
+          [ -f "$DEB" ] || { echo '::error::RyukGram rootless deb not found'; exit 1; }
+          dpkg-deb -x "$DEB" stage
+          cp "$(find stage -name RyukGram.dylib -type f | head -1)" packages/RyukGram.dylib
+          cp -R "$(find stage -type d -name RyukGram.bundle | head -1)" packages/RyukGram.bundle
+          echo "TAG=$TAG" >> "$GITHUB_ENV"
+      - name: Download Instagram IPA
+        env:
+          IPA_URL: ${{ steps.input.outputs.url }}
+        run: curl --fail --location --retry 3 "$IPA_URL" -o packages/Instagram.ipa
+      - name: Build sideload IPA
+        run: |
+          cyan -i packages/Instagram.ipa -o packages/RyukGram.ipa \
+            -f packages/RyukGram.dylib packages/RyukGram.bundle -c 9 -m 15.0 -du
+          VERSION="$(python3 - <<'PY'
+          import plistlib, zipfile
+          with zipfile.ZipFile('packages/Instagram.ipa') as z:
+              p=next(x for x in z.namelist() if x.startswith('Payload/') and x.endswith('.app/Info.plist'))
+              print(plistlib.loads(z.read(p)).get('CFBundleShortVersionString','unknown'))
+          PY
+          )"
+          ipapatch --input packages/RyukGram.ipa --inplace --noconfirm --dylib packages/RyukGram.dylib || true
+          mv packages/RyukGram.ipa "RyukGram_${VERSION}.ipa"
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+      - name: Publish ODR release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="ryukgram-$VERSION-${GITHUB_RUN_ID}"
+          gh release create "$TAG" "RyukGram_${VERSION}.ipa" --repo "$GITHUB_REPOSITORY" \
+            --title "RyukGram Instagram $VERSION" \
+            --notes "Built by ODR from RyukGram upstream source/release assets."
