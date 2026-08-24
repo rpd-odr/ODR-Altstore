@@ -26,6 +26,8 @@ class DecryptDayAdapter(BaseDecryptAdapter):
         self.resolved_version: Optional[str] = None
         self.resolved_build: str = ""
         self._resolved_ipa_url: Optional[str] = None
+        self._download_headers: dict = {}
+        self._download_cookies: dict = {}
 
     @staticmethod
     def _extract_download_url(page_url: str, body: str) -> Optional[str]:
@@ -89,7 +91,6 @@ class DecryptDayAdapter(BaseDecryptAdapter):
 
     @staticmethod
     def _file_payload(app_id: str, version: str) -> str:
-        # SvelteKit form action payload used by decrypt.day's /files endpoint.
         values = ["appId", app_id, "version", version, "isPremier"]
         data = [0xA3]
         for value in values:
@@ -150,18 +151,15 @@ class DecryptDayAdapter(BaseDecryptAdapter):
             bundle = self._get_string(app, "bundle_id")
             if not bundle:
                 continue
-
             versions = []
             for item in (root.get("versions", []) if isinstance(root, dict) else []):
                 name = self._get_string(item, "name")
                 if name:
                     versions.append(name)
-
             app_id = self._get_string(app, "id")
             if not app_id:
                 raise ProviderError("decrypt.day metadata omitted its internal app ID")
             return app_id, bundle, versions
-
         raise ProviderError("decrypt.day did not return recognizable app metadata")
 
     def _get_file_id(self, client: httpx.Client, app_store_id: str, decrypt_day_id: str, version: str, page_url: str):
@@ -219,14 +217,23 @@ class DecryptDayAdapter(BaseDecryptAdapter):
                 raise ProviderError(
                     f"decrypt.day bundle mismatch: expected {bundle_id}, got {remote_bundle}"
                 )
-
             if not versions:
                 raise ProviderError("decrypt.day returned no available app versions")
-
             version = versions[-1]
             file_id = self._get_file_id(client, app_store_id, decrypt_day_id, version, page_url)
             if not file_id:
                 raise ProviderError(f"decrypt.day has no free/login-free IPA for version {version}")
+
+            # The download endpoint is protected by the same browser/session context
+            # used by the metadata and /files requests. Keep the relevant headers and
+            # cookies so the subsequent IPA download does not become an anonymous request.
+            self._download_headers = self._request_headers(page_url)
+            self._download_headers.update({
+                "Accept": "application/octet-stream,application/zip,*/*",
+                "Referer": page_url,
+                "Origin": "https://decrypt.day",
+            })
+            self._download_cookies = dict(client.cookies)
 
         download_url = f"https://decrypt.day/app/id{app_store_id}/dl/{file_id}"
         self.resolved_version = version
@@ -238,6 +245,9 @@ class DecryptDayAdapter(BaseDecryptAdapter):
             "build": "",
             "download_url": download_url,
         }
+
+    def get_download_context(self):
+        return dict(self._download_headers), dict(self._download_cookies)
 
     def resolve_ipa_url(
         self,
