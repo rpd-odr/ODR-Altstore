@@ -1,6 +1,6 @@
 import logging
 import os
-from typing import Any
+from typing import Any, Optional
 
 import httpx
 
@@ -18,6 +18,10 @@ class DecryptIPAAdapter(BaseDecryptAdapter):
     Decrypt.day exposes its library as a JSON feed used by IPA-library clients.
     We only consume the published feed; authentication or scraping of user
     accounts is deliberately not part of this adapter.
+
+    ``IPA_PROVIDER_URL`` remains supported for backwards compatibility with
+    the original generic HTTP resolver used by the provider tests and older
+    deployments. An explicit ``metadata_url`` uses the generic HTTP adapter.
     """
 
     DEFAULT_LIBRARY_URL = "https://decrypt.day/library/data.json"
@@ -25,6 +29,7 @@ class DecryptIPAAdapter(BaseDecryptAdapter):
     def __init__(self, max_retries: int = 3):
         super().__init__(max_retries=max_retries)
         self.library_url = os.getenv("DECRYPT_DAY_LIBRARY_URL", self.DEFAULT_LIBRARY_URL)
+        self.resolved_version: Optional[str] = None
 
     @staticmethod
     def _version_key(version: str) -> tuple:
@@ -102,7 +107,30 @@ class DecryptIPAAdapter(BaseDecryptAdapter):
                     return [x for x in value if isinstance(x, dict)]
         raise ProviderError("Неизвестный формат Decrypt.day library JSON")
 
-    def resolve_ipa_url(self, bundle_id: str, version: str, timeout: float = 30.0) -> str:
+    def resolve_ipa_url(
+        self,
+        bundle_id: str,
+        version: str,
+        timeout: float = 30.0,
+        metadata_url: Optional[str] = None,
+    ) -> str:
+        # Explicit metadataUrl is handled by the generic HTTP metadata adapter.
+        if metadata_url:
+            from providers.adapters.http_ipa import HttpIPASourceAdapter
+
+            adapter = HttpIPASourceAdapter(max_retries=self.max_retries)
+            return adapter.resolve_ipa_url(
+                bundle_id,
+                version,
+                timeout=timeout,
+                metadata_url=metadata_url,
+            )
+
+        # Preserve compatibility with the original resolver API. This is also
+        # useful for the existing test suite and older source configurations.
+        if os.getenv("IPA_PROVIDER_URL"):
+            return super().resolve_ipa_url(bundle_id, version, timeout=timeout)
+
         entries = self._fetch_library(timeout)
         matches = [item for item in entries if self._app_matches(item, bundle_id)]
         if not matches:
