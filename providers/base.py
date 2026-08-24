@@ -85,23 +85,45 @@ class IPASourceProvider:
             )
             page = context.new_page()
             try:
-                with page.expect_download(timeout=int(self.timeout * 1000)) as download_info:
-                    page.goto(url, wait_until="domcontentloaded", timeout=int(self.timeout * 1000))
-                    page.wait_for_timeout(2500)
-                download = download_info.value
-                download.save_as(tmp_path)
-            except Exception:
-                # Some versions of decrypt.day stream the IPA as a normal response
-                # instead of exposing a browser download event. Capture the response
-                # body in that case after the challenge has been solved.
-                response = page.wait_for_timeout(1000)
-                del response
-                raise
+                try:
+                    with page.expect_download(timeout=7000) as download_info:
+                        page.goto(url, wait_until="domcontentloaded", timeout=int(self.timeout * 1000))
+                    download = download_info.value
+                    download.save_as(tmp_path)
+                    return {"content_type": "application/octet-stream", "final_url": sanitize_url(url)}
+                except Exception as first_exc:
+                    logger.info("decrypt.day direct browser download not immediate: %s", first_exc)
+
+                # If Cloudflare presented a challenge, the browser can execute its
+                # JavaScript and establish the clearance cookie. Reuse that same
+                # browser context for the actual file request instead of copying
+                # cookies into a second client too early.
+                page.wait_for_timeout(5000)
+                cookies = context.cookies(url)
+                logger.info("decrypt.day browser session established (%d cookies)", len(cookies))
+
+                response = context.request.get(
+                    url,
+                    timeout=int(self.timeout * 1000),
+                    fail_on_status_code=False,
+                    headers={"Accept": "application/octet-stream,application/zip,*/*"},
+                )
+                if response.status != 200:
+                    raise ProviderError(
+                        f"decrypt.day browser session вернула HTTP {response.status} для {sanitize_url(url)}"
+                    )
+                body = response.body()
+                if len(body) > MAX_IPA_SIZE:
+                    raise ProviderError(f"Размер IPA превышает лимит {MAX_IPA_SIZE} байт")
+                with open(tmp_path, "wb") as out:
+                    out.write(body)
+                return {
+                    "content_type": response.headers.get("content-type", ""),
+                    "final_url": sanitize_url(response.url),
+                }
             finally:
                 context.close()
                 browser.close()
-
-        return {"content_type": "application/octet-stream", "final_url": sanitize_url(url)}
 
     def download_and_inspect_ipa(
         self,
@@ -114,8 +136,6 @@ class IPASourceProvider:
         headers = {"User-Agent": self.user_agent}
         if extra_headers:
             headers.update({k: v for k, v in extra_headers.items() if v is not None})
-        if cookies:
-            headers.pop("Cookie", None)
         token = os.getenv("IPA_PROVIDER_TOKEN")
         if token and "Authorization" not in headers:
             headers["Authorization"] = f"Bearer {token}"
@@ -135,21 +155,23 @@ class IPASourceProvider:
             final_url = clean_url
 
             if is_decrypt_day:
+                browser_error = None
                 try:
                     browser_meta = self._download_with_browser(url, tmp_path)
                     content_type = browser_meta["content_type"]
                     final_url = browser_meta["final_url"]
                     downloaded = os.path.getsize(tmp_path)
-                    if downloaded > MAX_IPA_SIZE:
-                        raise ProviderError(f"Размер IPA превышает лимит {MAX_IPA_SIZE} байт")
                     with open(tmp_path, "rb") as source:
                         for chunk in iter(lambda: source.read(65536), b""):
                             hasher.update(chunk)
                     status = 200
                 except ProviderError:
                     raise
-                except Exception as browser_exc:
-                    logger.warning("decrypt.day browser download failed: %s; falling back to HTTP", browser_exc)
+                except Exception as exc:
+                    browser_error = exc
+
+                if browser_error is not None:
+                    logger.warning("decrypt.day browser download failed: %s; falling back to HTTP", browser_error)
                     with httpx.Client(
                         timeout=httpx.Timeout(self.timeout),
                         headers=headers,
