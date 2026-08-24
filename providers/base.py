@@ -70,7 +70,7 @@ class IPASourceProvider:
                         if status == 404:
                             response.close()
                             raise ProviderError(f"HTTP 404: ресурс не найден по адресу {clean_url}")
-                        if status == 429 or status >= 500:
+                        if status == 429 or status == 403 or status >= 500:
                             if attempt < self.max_retries:
                                 retry_after = response.headers.get("Retry-After")
                                 try:
@@ -78,6 +78,7 @@ class IPASourceProvider:
                                 except ValueError:
                                     delay = float(2 ** attempt)
                                 response.close()
+                                logger.warning(f"HTTP {status} на попытке {attempt}/{self.max_retries}, повтор через {delay}s")
                                 time.sleep(delay)
                                 continue
                             response.close()
