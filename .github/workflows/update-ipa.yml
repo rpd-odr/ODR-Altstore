@@ -1,0 +1,64 @@
+name: Auto Update IPA State
+
+on:
+  schedule:
+    - cron: "*/30 * * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: ipa-update-pipeline
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: python -m pip install -r requirements.txt
+
+      - name: Update IPA metadata
+        env:
+          IPA_PROVIDER_TIMEOUT: "60"
+        shell: bash
+        run: |
+          set -euo pipefail
+          while IFS= read -r builder; do
+            echo "Updating ${builder}"
+            python watcher.py --builder "${builder}" --version latest
+          done < <(python - <<'PY'
+          import json
+          with open("sources.json", encoding="utf-8") as f:
+              data = json.load(f)
+          for app in data.get("apps", data.get("sources", [])):
+              if app.get("builder") and app.get("provider") == "decrypt_ipa":
+                  print(app["builder"])
+          PY
+          )
+
+      - name: Run tests
+        run: pytest tests/ -v
+
+      - name: Commit state
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add state.json
+          if git diff --cached --quiet; then
+            echo "No state changes"
+            exit 0
+          fi
+          git commit -m "chore: update IPA state"
+          git push
