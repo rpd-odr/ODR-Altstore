@@ -19,7 +19,8 @@
       "repo": "SideloadLabs/EeveeSpotifyReincarnated",
       "bundleIdentifier": "com.spotify.client",
       "developerName": "SideloadLabs / EeveeSpotify contributors",
-      "subtitle": "EeveeSpotify build distributed by its upstream project.",
+      "subtitle": "Spotify with EeveeSpotify",
+      "localizedDescription": "EeveeSpotify build distributed by its upstream project.",
       "iconURL": "https://raw.githubusercontent.com/SideloadLabs/EeveeSpotifyReincarnated/main/Assets.xcassets/AppIcon.appiconset/AppIcon60x60@2x.png",
       "assetPattern": "\\.ipa$"
     },
@@ -35,7 +36,9 @@
       "iconURL": "",
       "builder": "ytkace",
       "provider": "decrypt_ipa",
-      "ipaAdapter": "decryptipa",
+      "ipaAdapter": "decryptday",
+      "metadataUrl": "https://decrypt.day/app/id544007664",
+      "appStoreId": "544007664",
       "workflow": "ytkace.yml",
       "tweaksFile": "tweaks.json"
     },
@@ -51,7 +54,9 @@
       "iconURL": "",
       "builder": "ryukgram",
       "provider": "decrypt_ipa",
-      "ipaAdapter": "decryptipa",
+      "ipaAdapter": "decryptday",
+      "metadataUrl": "https://decrypt.day/app/id389801252",
+      "appStoreId": "389801252",
       "workflow": "ryukgram.yml"
     }
   ]
