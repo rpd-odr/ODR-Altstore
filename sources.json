@@ -34,6 +34,9 @@
       "subtitle": "YouTube tweak build",
       "localizedDescription": "YTKACE builds published to ODR releases.",
       "iconURL": "",
+      "builder": "ytkace",
+      "provider": "decrypt_ipa",
+      "ipaAdapter": "decryptipa",
       "workflow": "ytkace.yml"
     },
     {
@@ -46,6 +49,9 @@
       "subtitle": "Instagram tweak build",
       "localizedDescription": "RyukGram builds published to ODR releases.",
       "iconURL": "",
+      "builder": "ryukgram",
+      "provider": "decrypt_ipa",
+      "ipaAdapter": "decryptipa",
       "workflow": "ryukgram.yml"
     }
   ]
