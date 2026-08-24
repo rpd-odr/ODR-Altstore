@@ -19,8 +19,7 @@
       "repo": "SideloadLabs/EeveeSpotifyReincarnated",
       "bundleIdentifier": "com.spotify.client",
       "developerName": "SideloadLabs / EeveeSpotify contributors",
-      "subtitle": "Spotify with EeveeSpotify",
-      "localizedDescription": "EeveeSpotify build distributed by its upstream project.",
+      "subtitle": "EeveeSpotify build distributed by its upstream project.",
       "iconURL": "https://raw.githubusercontent.com/SideloadLabs/EeveeSpotifyReincarnated/main/Assets.xcassets/AppIcon.appiconset/AppIcon60x60@2x.png",
       "assetPattern": "\\.ipa$"
     },
@@ -36,9 +35,7 @@
       "iconURL": "",
       "builder": "ytkace",
       "provider": "decrypt_ipa",
-      "ipaAdapter": "decryptday",
-      "metadataUrl": "https://decrypt.day/app/id544007664",
-      "appStoreId": "544007664",
+      "ipaAdapter": "decryptipa",
       "workflow": "ytkace.yml",
       "tweaksFile": "tweaks.json"
     },
@@ -49,14 +46,12 @@
       "repo": "faroukbmiled/RyukGram",
       "bundleIdentifier": "com.burbn.instagram",
       "developerName": "faroukbmiled",
-      "subtitle": "Instagram tweak build",
+      "subtitle": "RyukGram builds published to ODR releases.",
       "localizedDescription": "RyukGram builds published to ODR releases.",
       "iconURL": "",
       "builder": "ryukgram",
       "provider": "decrypt_ipa",
-      "ipaAdapter": "decryptday",
-      "metadataUrl": "https://decrypt.day/app/id389801252",
-      "appStoreId": "389801252",
+      "ipaAdapter": "decryptipa",
       "workflow": "ryukgram.yml"
     }
   ]
