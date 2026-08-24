@@ -1,0 +1,97 @@
+name: Build YTKACE
+
+on:
+  workflow_dispatch:
+    inputs:
+      ipa_url:
+        description: URL of the decrypted YouTube IPA to build from
+        required: true
+        type: string
+  repository_dispatch:
+    types: [ytkace-build]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ytkace-build
+  cancel-in-progress: true
+
+env:
+  YTKACE_REPO: https://github.com/itzzace/ytkace.git
+
+jobs:
+  deb:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Checkout YTKACE
+        run: git clone --depth=1 "$YTKACE_REPO" ytkace
+      - name: Install Theos
+        run: bash -c "$(curl -fsSL https://raw.githubusercontent.com/roothide/theos/master/bin/install-theos)"
+      - name: Build rootless package
+        working-directory: ytkace
+        env:
+          THEOS: ${{ github.workspace }}/theos
+        run: |
+          make clean
+          make package FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=rootless DISABLE_ROOTLESS_COMPAT_WARNING=1
+          cp packages/*.deb "$GITHUB_WORKSPACE/ytkace.deb"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ytkace-deb
+          path: ytkace.deb
+
+  ipa:
+    needs: deb
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: ytkace-deb
+      - name: Checkout YTKACE
+        run: git clone --depth=1 "$YTKACE_REPO" ytkace
+      - name: Resolve IPA URL
+        id: input
+        env:
+          DISPATCH_URL: ${{ github.event.client_payload.ipa_url }}
+          MANUAL_URL: ${{ inputs.ipa_url }}
+        run: |
+          URL="$MANUAL_URL"
+          [ -n "$URL" ] || URL="$DISPATCH_URL"
+          [ -n "$URL" ] || { echo '::error::ipa_url is required'; exit 1; }
+          echo "url=$URL" >> "$GITHUB_OUTPUT"
+      - name: Download IPA
+        env:
+          IPA_URL: ${{ steps.input.outputs.url }}
+        run: curl --fail --location --retry 3 "$IPA_URL" -o YouTube.ipa
+      - name: Install tooling
+        run: |
+          brew install ldid dpkg
+          pipx install --force https://github.com/asdfzxcvbn/pyzule-rw/archive/main.zip
+      - name: Inject YTKACE
+        run: |
+          mkdir deb-root
+          dpkg-deb -x ytkace.deb deb-root
+          DYLIB="$(find deb-root -name YTKACE.dylib -type f | head -1)"
+          [ -n "$DYLIB" ] || { echo '::error::YTKACE.dylib not found'; exit 1; }
+          VERSION="$(python3 - <<'PY'
+          import plistlib, zipfile
+          with zipfile.ZipFile('YouTube.ipa') as z:
+              p=next(x for x in z.namelist() if x.startswith('Payload/') and x.endswith('.app/Info.plist'))
+              d=plistlib.loads(z.read(p))
+              print(d.get('CFBundleShortVersionString','unknown'))
+          PY
+          )"
+          bash ytkace/Scripts/sideload-repack.sh YouTube.ipa "$DYLIB" "YTKACE_${VERSION}.ipa"
+          bash ytkace/Tools/verify-artifacts.sh "$DYLIB" "YTKACE_${VERSION}.ipa"
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+      - name: Publish ODR release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="ytkace-$VERSION-${GITHUB_RUN_ID}"
+          gh release create "$TAG" "YTKACE_${VERSION}.ipa" --repo "$GITHUB_REPOSITORY" \
+            --title "YTKACE YouTube $VERSION" \
+            --notes "Built by ODR from YTKACE upstream source."
