@@ -27,10 +27,9 @@ jobs:
       - name: Install dependencies
         run: python -m pip install -r requirements.txt
 
-      - name: Validate latest decrypted IPAs and dispatch builds
+      - name: Validate latest decrypted IPAs
         env:
           IPA_PROVIDER_TIMEOUT: "60"
-          GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           set -euo pipefail
@@ -50,24 +49,8 @@ jobs:
             [ "$verified" = "true" ] || { echo "::error::${builder}: IPA validation failed"; exit 1; }
             [ -n "$ipa_url" ] || { echo "::error::${builder}: watcher returned no IPA URL"; exit 1; }
 
+            printf '%s\n' "$ipa_url" > "$RUNNER_TEMP/ipa-output/${builder}.url"
             echo "Validated ${builder}: ${version} (${sha256})"
-
-            case "$builder" in
-              ytkace)
-                gh api --method POST "repos/${GITHUB_REPOSITORY}/dispatches" \
-                  -f event_type='ytkace-build' \
-                  -f client_payload[ipa_url]="$ipa_url"
-                ;;
-              ryukgram)
-                gh api --method POST "repos/${GITHUB_REPOSITORY}/dispatches" \
-                  -f event_type='ryukgram-build' \
-                  -f client_payload[decrypted_instagram_url]="$ipa_url" \
-                  -f client_payload[target]='latest'
-                ;;
-              *)
-                echo "No build dispatch configured for ${builder}"
-                ;;
-            esac
           done < <(python - <<'PY'
           import json
           with open("sources.json", encoding="utf-8") as f:
@@ -80,6 +63,37 @@ jobs:
 
       - name: Run tests
         run: pytest tests/ -v
+
+      - name: Dispatch validated builds
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          for url_file in "$RUNNER_TEMP"/ipa-output/*.url; do
+            [ -f "$url_file" ] || continue
+            builder="$(basename "$url_file" .url)"
+            ipa_url="$(cat "$url_file")"
+
+            case "$builder" in
+              ytkace)
+                echo "==> Dispatching YTKACE build"
+                gh api --method POST "repos/${GITHUB_REPOSITORY}/dispatches" \
+                  -f event_type='ytkace-build' \
+                  -f client_payload[ipa_url]="$ipa_url"
+                ;;
+              ryukgram)
+                echo "==> Dispatching RyukGram build"
+                gh api --method POST "repos/${GITHUB_REPOSITORY}/dispatches" \
+                  -f event_type='ryukgram-build' \
+                  -f client_payload[decrypted_instagram_url]="$ipa_url" \
+                  -f client_payload[target]='latest'
+                ;;
+              *)
+                echo "No build dispatch configured for ${builder}"
+                ;;
+            esac
+          done
 
       - name: Commit state
         shell: bash
