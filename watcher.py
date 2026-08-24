@@ -8,6 +8,7 @@ from providers.utils import load_state, save_state_atomic
 
 logger = logging.getLogger("Watcher")
 SOURCES_FILE = "sources.json"
+IPA_STATE_KEY = "ipa"
 
 
 def load_sources_config() -> Dict[str, Dict[str, Any]]:
@@ -51,12 +52,16 @@ def on_new_version_detected(builder_name: str, detected_version: str = "latest",
         raise RuntimeError(f"IPA для {builder_name} не прошёл валидацию")
 
     state = load_state()
-    previous = state.get(builder_name, {})
+    ipa_state = state.setdefault(IPA_STATE_KEY, {})
+    if not isinstance(ipa_state, dict):
+        raise ValueError(f"{IPA_STATE_KEY} в state.json должен быть объектом")
+
+    previous = ipa_state.get(builder_name, {})
     if not dry_run and previous.get("version") == metadata.version and previous.get("sha256") == metadata.sha256:
         logger.info("%s уже актуален: %s (%s)", builder_name, metadata.version, metadata.sha256)
         return metadata
 
-    state[builder_name] = {
+    ipa_state[builder_name] = {
         "bundle_id": metadata.bundle_id,
         "version": metadata.version,
         "build": metadata.build,
