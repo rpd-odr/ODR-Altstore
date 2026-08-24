@@ -49,10 +49,19 @@ class IPASourceProvider:
             sanitized = message.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
             print(f"::{level}::{sanitized}", file=sys.stderr)
 
-    def download_and_inspect_ipa(self, url: str, expected_bundle_id: str, expected_version: Optional[str] = None) -> Dict[str, Any]:
+    def download_and_inspect_ipa(
+        self,
+        url: str,
+        expected_bundle_id: str,
+        expected_version: Optional[str] = None,
+        extra_headers: Optional[Dict[str, str]] = None,
+        cookies: Optional[Dict[str, str]] = None,
+    ) -> Dict[str, Any]:
         headers = {"User-Agent": self.user_agent}
+        if extra_headers:
+            headers.update({k: v for k, v in extra_headers.items() if v is not None})
         token = os.getenv("IPA_PROVIDER_TOKEN")
-        if token:
+        if token and "Authorization" not in headers:
             headers["Authorization"] = f"Bearer {token}"
         clean_url = sanitize_url(url)
         hasher = hashlib.sha256()
@@ -61,7 +70,12 @@ class IPASourceProvider:
         try:
             with tempfile.NamedTemporaryFile(delete=False, suffix=".ipa") as tmp:
                 tmp_path = tmp.name
-            with httpx.Client(timeout=httpx.Timeout(self.timeout), headers=headers, follow_redirects=True) as client:
+            with httpx.Client(
+                timeout=httpx.Timeout(self.timeout),
+                headers=headers,
+                cookies=cookies or None,
+                follow_redirects=True,
+            ) as client:
                 response = None
                 for attempt in range(1, self.max_retries + 1):
                     try:
