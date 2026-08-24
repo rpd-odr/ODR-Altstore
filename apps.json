@@ -1,0 +1,9 @@
+{
+  "name": "ODR Altstore",
+  "identifier": "su.odr.altstore",
+  "subtitle": "ODR apps for SideStore and LiveContainer",
+  "description": "A curated source of iOS apps distributed by their respective authors.",
+  "iconURL": "https://raw.githubusercontent.com/rpd-odr/ODR-Altstore/main/icon.png",
+  "website": "https://github.com/rpd-odr/ODR-Altstore",
+  "apps": []
+}
