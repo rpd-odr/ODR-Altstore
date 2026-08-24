@@ -118,6 +118,8 @@ class IPASourceProvider:
                 if length and length.isdigit() and int(length) > MAX_IPA_SIZE:
                     response.close()
                     raise ProviderError(f"Размер IPA превышает лимит {MAX_IPA_SIZE} байт")
+                final_url = sanitize_url(str(response.url))
+                content_type = response.headers.get("Content-Type", "")
                 try:
                     with open(tmp_path, "wb") as out:
                         for chunk in response.iter_bytes(chunk_size=65536):
@@ -129,6 +131,17 @@ class IPASourceProvider:
                 finally:
                     response.close()
             if not zipfile.is_zipfile(tmp_path):
+                with open(tmp_path, "rb") as probe:
+                    head = probe.read(64)
+                head_hex = head.hex(" ")
+                try:
+                    head_text = head.decode("utf-8", errors="replace").replace("\r", "\\r").replace("\n", "\\n")
+                except Exception:
+                    head_text = "<binary>"
+                logger.error(
+                    "IPA download is not a ZIP: status=%s content_type=%r downloaded=%d final_url=%s head_hex=%s head_text=%r sha256=%s",
+                    status, content_type, downloaded, final_url, head_hex, head_text[:200], hasher.hexdigest(),
+                )
                 raise ProviderError("Скачанный файл не является валидным ZIP/IPA архивом")
             with zipfile.ZipFile(tmp_path, "r") as archive:
                 if archive.testzip() is not None:
