@@ -32,12 +32,13 @@
       "bundleIdentifier": "com.google.ios.youtube",
       "developerName": "itzzace",
       "subtitle": "YouTube tweak build",
-      "localizedDescription": "YTKACE builds published to ODR releases.",
+      "localizedDescription": "YTKACE with automatically built community tweaks.",
       "iconURL": "",
       "builder": "ytkace",
       "provider": "decrypt_ipa",
       "ipaAdapter": "decryptipa",
-      "workflow": "ytkace.yml"
+      "workflow": "ytkace.yml",
+      "tweaksFile": "tweaks.json"
     },
     {
       "id": "ryukgram",
