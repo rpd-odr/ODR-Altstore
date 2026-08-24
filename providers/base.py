@@ -60,6 +60,13 @@ class IPASourceProvider:
         headers = {"User-Agent": self.user_agent}
         if extra_headers:
             headers.update({k: v for k, v in extra_headers.items() if v is not None})
+        parsed = urlparse(url)
+        if parsed.hostname == "decrypt.day":
+            app_match = __import__("re").search(r"/app/id\d+", parsed.path)
+            if app_match:
+                app_url = f"https://decrypt.day{app_match.group(0)}"
+                headers.setdefault("Referer", app_url)
+            headers.setdefault("Accept", "application/octet-stream,application/zip,*/*")
         token = os.getenv("IPA_PROVIDER_TOKEN")
         if token and "Authorization" not in headers:
             headers["Authorization"] = f"Bearer {token}"
