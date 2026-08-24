@@ -2,7 +2,6 @@ import hashlib
 import logging
 import os
 import plistlib
-import re
 import sys
 import tempfile
 import time
@@ -14,9 +13,9 @@ from urllib.parse import urlparse, urlunparse
 import httpx
 
 try:
-    from curl_cffi import requests as curl_requests
-except ImportError:  # pragma: no cover - optional until requirements are installed
-    curl_requests = None
+    from playwright.sync_api import sync_playwright
+except ImportError:  # pragma: no cover - optional dependency
+    sync_playwright = None
 
 logger = logging.getLogger("IPASourceProvider")
 MAX_IPA_SIZE = 2 * 1024 * 1024 * 1024
@@ -53,12 +52,56 @@ class IPASourceProvider:
     def __init__(self, timeout: float = 30.0, max_retries: int = 3, user_agent: Optional[str] = None):
         self.timeout = float(os.getenv("IPA_PROVIDER_TIMEOUT", timeout))
         self.max_retries = max(1, max_retries)
-        self.user_agent = os.getenv("IPA_PROVIDER_USER_AGENT", user_agent or "ODR-Alt-Repository-Provider/2.3")
+        self.user_agent = os.getenv("IPA_PROVIDER_USER_AGENT", user_agent or "ODR-Alt-Repository-Provider/2.5")
 
     def log_gh_annotation(self, level: str, message: str) -> None:
         if os.getenv("GITHUB_ACTIONS") == "true":
             sanitized = message.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
             print(f"::{level}::{sanitized}", file=sys.stderr)
+
+    def _download_with_browser(self, url: str, tmp_path: str) -> Dict[str, Any]:
+        if sync_playwright is None:
+            raise ProviderError("Для decrypt.day нужен Playwright: установите playwright и Chromium")
+
+        logger.info("decrypt.day: открываем IPA URL в Chromium для прохождения web challenge")
+        proxy_url = os.getenv("IPA_PROVIDER_PROXY") or os.getenv("HTTPS_PROXY") or os.getenv("HTTP_PROXY")
+        launch_kwargs: Dict[str, Any] = {
+            "headless": True,
+            "args": ["--disable-blink-features=AutomationControlled"],
+        }
+        if proxy_url:
+            launch_kwargs["proxy"] = {"server": proxy_url}
+
+        with sync_playwright() as pw:
+            browser = pw.chromium.launch(**launch_kwargs)
+            context = browser.new_context(
+                user_agent=os.getenv(
+                    "IPA_PROVIDER_USER_AGENT",
+                    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+                    "(KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36",
+                ),
+                locale="en-US",
+                accept_downloads=True,
+            )
+            page = context.new_page()
+            try:
+                with page.expect_download(timeout=int(self.timeout * 1000)) as download_info:
+                    page.goto(url, wait_until="domcontentloaded", timeout=int(self.timeout * 1000))
+                    page.wait_for_timeout(2500)
+                download = download_info.value
+                download.save_as(tmp_path)
+            except Exception:
+                # Some versions of decrypt.day stream the IPA as a normal response
+                # instead of exposing a browser download event. Capture the response
+                # body in that case after the challenge has been solved.
+                response = page.wait_for_timeout(1000)
+                del response
+                raise
+            finally:
+                context.close()
+                browser.close()
+
+        return {"content_type": "application/octet-stream", "final_url": sanitize_url(url)}
 
     def download_and_inspect_ipa(
         self,
@@ -71,23 +114,14 @@ class IPASourceProvider:
         headers = {"User-Agent": self.user_agent}
         if extra_headers:
             headers.update({k: v for k, v in extra_headers.items() if v is not None})
-        parsed = urlparse(url)
-        is_decrypt_day = parsed.hostname == "decrypt.day"
-        if is_decrypt_day:
-            app_match = re.search(r"/app/id\d+", parsed.path)
-            if app_match:
-                app_url = f"https://decrypt.day{app_match.group(0)}"
-                headers.setdefault("Referer", app_url)
-            headers.setdefault("Accept", "application/octet-stream,application/zip,*/*")
-            # curl_cffi gives decrypt.day a real browser TLS/HTTP fingerprint.
-            # A plain httpx request was consistently answered with HTTP 403.
-            headers.setdefault("Sec-Fetch-Dest", "document")
-            headers.setdefault("Sec-Fetch-Mode", "navigate")
-            headers.setdefault("Sec-Fetch-Site", "same-origin")
-            headers.setdefault("Accept-Language", "en-US,en;q=0.9")
+        if cookies:
+            headers.pop("Cookie", None)
         token = os.getenv("IPA_PROVIDER_TOKEN")
         if token and "Authorization" not in headers:
             headers["Authorization"] = f"Bearer {token}"
+
+        parsed = urlparse(url)
+        is_decrypt_day = parsed.hostname == "decrypt.day"
         clean_url = sanitize_url(url)
         hasher = hashlib.sha256()
         downloaded = 0
@@ -96,74 +130,90 @@ class IPASourceProvider:
             with tempfile.NamedTemporaryFile(delete=False, suffix=".ipa") as tmp:
                 tmp_path = tmp.name
 
-            if is_decrypt_day and curl_requests is not None:
-                client = curl_requests.Session(impersonate=os.getenv("IPA_CURL_IMPERSONATE", "chrome"))
-                if cookies:
-                    client.cookies.update(cookies)
-                client.headers.update(headers)
-                request_kwargs = {"timeout": self.timeout, "allow_redirects": True, "stream": True}
+            status = 0
+            content_type = ""
+            final_url = clean_url
+
+            if is_decrypt_day:
+                try:
+                    browser_meta = self._download_with_browser(url, tmp_path)
+                    content_type = browser_meta["content_type"]
+                    final_url = browser_meta["final_url"]
+                    downloaded = os.path.getsize(tmp_path)
+                    if downloaded > MAX_IPA_SIZE:
+                        raise ProviderError(f"Размер IPA превышает лимит {MAX_IPA_SIZE} байт")
+                    with open(tmp_path, "rb") as source:
+                        for chunk in iter(lambda: source.read(65536), b""):
+                            hasher.update(chunk)
+                    status = 200
+                except ProviderError:
+                    raise
+                except Exception as browser_exc:
+                    logger.warning("decrypt.day browser download failed: %s; falling back to HTTP", browser_exc)
+                    with httpx.Client(
+                        timeout=httpx.Timeout(self.timeout),
+                        headers=headers,
+                        cookies=cookies or None,
+                        follow_redirects=True,
+                    ) as client:
+                        response = None
+                        for attempt in range(1, self.max_retries + 1):
+                            response = client.get(url)
+                            status = response.status_code
+                            content_type = response.headers.get("Content-Type", "")
+                            if status == 200:
+                                break
+                            if status == 404:
+                                raise ProviderError(f"HTTP 404: ресурс не найден по адресу {clean_url}")
+                            if attempt >= self.max_retries:
+                                raise ProviderError(f"HTTP {status} после {self.max_retries} попыток ({clean_url})")
+                            time.sleep(2 ** attempt)
+                        final_url = sanitize_url(str(response.url))
+                        with open(tmp_path, "wb") as out:
+                            for chunk in response.iter_bytes(chunk_size=65536):
+                                if not chunk:
+                                    continue
+                                downloaded += len(chunk)
+                                if downloaded > MAX_IPA_SIZE:
+                                    raise ProviderError(f"Размер IPA превысил лимит {MAX_IPA_SIZE} байт")
+                                hasher.update(chunk)
+                                out.write(chunk)
             else:
-                client = httpx.Client(
+                with httpx.Client(
                     timeout=httpx.Timeout(self.timeout),
                     headers=headers,
                     cookies=cookies or None,
                     follow_redirects=True,
-                )
-                request_kwargs = {}
-
-            try:
-                response = None
-                for attempt in range(1, self.max_retries + 1):
-                    try:
-                        if is_decrypt_day and curl_requests is not None:
-                            response = client.get(url, **request_kwargs)
-                        else:
-                            response = client.send(client.build_request("GET", url), stream=True)
-                        status = response.status_code
-                        if status == 404:
-                            response.close()
-                            raise ProviderError(f"HTTP 404: ресурс не найден по адресу {clean_url}")
-                        if status == 429 or status == 403 or status >= 500:
-                            if attempt < self.max_retries:
-                                retry_after = response.headers.get("Retry-After")
-                                try:
-                                    delay = max(0.0, float(retry_after)) if retry_after else float(2 ** attempt)
-                                except ValueError:
-                                    delay = float(2 ** attempt)
-                                response.close()
-                                logger.warning(
-                                    "HTTP %s на попытке %s/%s, повтор через %ss",
-                                    status, attempt, self.max_retries, delay,
-                                )
-                                time.sleep(delay)
-                                continue
-                            response.close()
-                            raise ProviderError(f"HTTP {status} после {self.max_retries} попыток ({clean_url})")
-                        response.raise_for_status()
-                        break
-                    except (httpx.HTTPError, Exception) as exc:
-                        # curl_cffi and httpx expose different exception classes; only
-                        # retry transport/HTTP failures here, while preserving ProviderError.
-                        if isinstance(exc, ProviderError):
+                ) as client:
+                    response = None
+                    for attempt in range(1, self.max_retries + 1):
+                        try:
+                            response = client.get(url)
+                            status = response.status_code
+                            if status == 404:
+                                raise ProviderError(f"HTTP 404: ресурс не найден по адресу {clean_url}")
+                            if status == 429 or status >= 500:
+                                if attempt < self.max_retries:
+                                    time.sleep(2 ** attempt)
+                                    continue
+                            response.raise_for_status()
+                            break
+                        except ProviderError:
                             raise
-                        if response is not None:
-                            response.close()
-                        if attempt >= self.max_retries:
-                            raise ProviderError(f"Сетевая ошибка при скачивании IPA ({clean_url}): {exc}") from exc
-                        time.sleep(2 ** attempt)
-
-                if response is None:
-                    raise ProviderError(f"Не удалось получить ответ от {clean_url}")
-                length = response.headers.get("Content-Length")
-                if length and length.isdigit() and int(length) > MAX_IPA_SIZE:
-                    response.close()
-                    raise ProviderError(f"Размер IPA превышает лимит {MAX_IPA_SIZE} байт")
-                final_url = sanitize_url(str(response.url))
-                content_type = response.headers.get("Content-Type", "")
-                try:
+                        except httpx.HTTPError as exc:
+                            if attempt >= self.max_retries:
+                                raise ProviderError(f"Сетевая ошибка при скачивании IPA ({clean_url}): {exc}") from exc
+                            time.sleep(2 ** attempt)
+                    if response is None:
+                        raise ProviderError(f"Не удалось получить ответ от {clean_url}")
+                    length = response.headers.get("Content-Length")
+                    if length and length.isdigit() and int(length) > MAX_IPA_SIZE:
+                        raise ProviderError(f"Размер IPA превышает лимит {MAX_IPA_SIZE} байт")
+                    status = response.status_code
+                    content_type = response.headers.get("Content-Type", "")
+                    final_url = sanitize_url(str(response.url))
                     with open(tmp_path, "wb") as out:
-                        iterator = response.iter_content(chunk_size=65536) if is_decrypt_day and curl_requests is not None else response.iter_bytes(chunk_size=65536)
-                        for chunk in iterator:
+                        for chunk in response.iter_bytes(chunk_size=65536):
                             if not chunk:
                                 continue
                             downloaded += len(chunk)
@@ -171,19 +221,15 @@ class IPASourceProvider:
                                 raise ProviderError(f"Размер IPA превысил лимит {MAX_IPA_SIZE} байт")
                             hasher.update(chunk)
                             out.write(chunk)
-                finally:
-                    response.close()
-            finally:
-                client.close()
 
             if not zipfile.is_zipfile(tmp_path):
                 with open(tmp_path, "rb") as probe:
-                    head = probe.read(64)
-                head_hex = head.hex(" ")
-                head_text = head.decode("utf-8", errors="replace").replace("\r", "\\r").replace("\n", "\\n")
+                    head = probe.read(128)
                 logger.error(
                     "IPA download is not a ZIP: status=%s content_type=%r downloaded=%d final_url=%s head_hex=%s head_text=%r sha256=%s",
-                    status, content_type, downloaded, final_url, head_hex, head_text[:200], hasher.hexdigest(),
+                    status, content_type, downloaded, final_url, head.hex(" "),
+                    head.decode("utf-8", errors="replace")[:200].replace("\r", "\\r").replace("\n", "\\n"),
+                    hasher.hexdigest(),
                 )
                 raise ProviderError("Скачанный файл не является валидным ZIP/IPA архивом")
 
@@ -197,6 +243,7 @@ class IPASourceProvider:
                 if not plist_name:
                     raise ProviderError("IPA не содержит Payload/*.app/Info.plist")
                 plist = plistlib.loads(archive.read(plist_name))
+
             bundle_id = plist.get("CFBundleIdentifier")
             version = plist.get("CFBundleShortVersionString")
             build = str(plist.get("CFBundleVersion", ""))
@@ -204,7 +251,13 @@ class IPASourceProvider:
                 raise ProviderError(f"Несовпадение Bundle ID: ожидался '{expected_bundle_id}', получен '{bundle_id}'")
             if expected_version not in (None, "", "latest", "newest") and version != expected_version:
                 raise ProviderError(f"Несовпадение версии: ожидалась '{expected_version}', получена '{version}'")
-            return {"bundle_id": bundle_id, "version": version, "build": build, "size": downloaded, "sha256": hasher.hexdigest()}
+            return {
+                "bundle_id": bundle_id,
+                "version": version,
+                "build": build,
+                "size": downloaded,
+                "sha256": hasher.hexdigest(),
+            }
         finally:
             if tmp_path and os.path.exists(tmp_path):
                 os.remove(tmp_path)
