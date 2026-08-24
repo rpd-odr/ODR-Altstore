@@ -78,16 +78,13 @@ jobs:
             case "$builder" in
               ytkace)
                 echo "==> Dispatching YTKACE build"
-                gh api --method POST "repos/${GITHUB_REPOSITORY}/dispatches" \
-                  -f event_type='ytkace-build' \
-                  -f client_payload[ipa_url]="$ipa_url"
+                jq -n --arg url "$ipa_url" '{event_type:"ytkace-build",client_payload:{ipa_url:$url}}' |
+                  gh api --method POST "repos/${GITHUB_REPOSITORY}/dispatches" --input -
                 ;;
               ryukgram)
                 echo "==> Dispatching RyukGram build"
-                gh api --method POST "repos/${GITHUB_REPOSITORY}/dispatches" \
-                  -f event_type='ryukgram-build' \
-                  -f client_payload[decrypted_instagram_url]="$ipa_url" \
-                  -f client_payload[target]='latest'
+                jq -n --arg url "$ipa_url" '{event_type:"ryukgram-build",client_payload:{decrypted_instagram_url:$url,target:"latest"}}' |
+                  gh api --method POST "repos/${GITHUB_REPOSITORY}/dispatches" --input -
                 ;;
               *)
                 echo "No build dispatch configured for ${builder}"
