@@ -58,6 +58,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           TARGET: ${{ steps.input.outputs.target }}
         run: |
+          set -euo pipefail
           mkdir -p release-assets packages
           TAG="$(gh release view --repo "$UPSTREAM_REPO" --json tagName -q .tagName)"
           if [ "$TARGET" = "410" ]; then PATTERN='RyukGram-410_*_rootless.deb'; else PATTERN='RyukGram_*_rootless.deb'; fi
@@ -65,15 +66,18 @@ jobs:
           DEB="$(ls -t release-assets/$PATTERN | head -1)"
           [ -f "$DEB" ] || { echo '::error::RyukGram rootless deb not found'; exit 1; }
           dpkg-deb -x "$DEB" stage
-          cp "$(find stage -name RyukGram.dylib -type f | head -1)" packages/RyukGram.dylib
-          cp -R "$(find stage -type d -name RyukGram.bundle | head -1)" packages/RyukGram.bundle
-          echo "TAG=$TAG" >> "$GITHUB_ENV"
+          DYLIB="$(find stage -name RyukGram.dylib -type f | head -1)"
+          BUNDLE="$(find stage -type d -name RyukGram.bundle | head -1)"
+          [ -n "$DYLIB" ] && [ -n "$BUNDLE" ] || { echo '::error::RyukGram payload missing'; exit 1; }
+          cp "$DYLIB" packages/RyukGram.dylib
+          cp -R "$BUNDLE" packages/RyukGram.bundle
       - name: Download Instagram IPA
         env:
           IPA_URL: ${{ steps.input.outputs.url }}
         run: curl --fail --location --retry 3 "$IPA_URL" -o packages/Instagram.ipa
       - name: Build sideload IPA
         run: |
+          set -euo pipefail
           cyan -i packages/Instagram.ipa -o packages/RyukGram.ipa \
             -f packages/RyukGram.dylib packages/RyukGram.bundle -c 9 -m 15.0 -du
           VERSION="$(python3 - <<'PY'
@@ -83,7 +87,7 @@ jobs:
               print(plistlib.loads(z.read(p)).get('CFBundleShortVersionString','unknown'))
           PY
           )"
-          ipapatch --input packages/RyukGram.ipa --inplace --noconfirm --dylib packages/RyukGram.dylib || true
+          ipapatch --input packages/RyukGram.ipa --inplace --noconfirm --dylib packages/RyukGram.dylib
           mv packages/RyukGram.ipa "RyukGram_${VERSION}.ipa"
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
       - name: Publish ODR release
