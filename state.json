@@ -1,0 +1,14 @@
+{
+  "termix": {
+    "upstream": "Termix-SSH/Mobile@335464388",
+    "tag": "release-1.4.0-tag",
+    "mirrorTag": "mirror-termix-release-1.4.0-tag",
+    "asset": "termix_ios.ipa"
+  },
+  "ytkace": {
+    "upstream": "itzzace/ytkace@375080865",
+    "tag": "v0.9.0",
+    "mirrorTag": "mirror-ytkace-v0.9.0",
+    "asset": "YTKACE_0.9.0_YouTube_21.33.6.ipa"
+  }
+}
