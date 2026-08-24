@@ -5,5 +5,33 @@
   "description": "A curated source of iOS apps distributed by their respective authors.",
   "iconURL": "https://raw.githubusercontent.com/rpd-odr/ODR-Altstore/main/icon.png",
   "website": "https://github.com/rpd-odr/ODR-Altstore",
-  "apps": []
+  "apps": [
+    {
+      "name": "Termix",
+      "bundleIdentifier": "com.karmaa.termix",
+      "developerName": "Termix-SSH",
+      "subtitle": "SSH, SFTP, RDP, VNC and server management",
+      "localizedDescription": "Official Termix mobile client. Requires Termix Server 2.3.2 or newer.",
+      "downloadURL": "https://github.com/Termix-SSH/Mobile/releases/download/release-1.4.0/Termix.ipa",
+      "iconURL": "https://raw.githubusercontent.com/Termix-SSH/Mobile/main/assets/images/icon.png",
+      "version": "1.4.0",
+      "versionDate": "2026-06-06",
+      "versionDescription": "Complete UI redesign, remote desktop and Docker support, plus many mobile improvements.",
+      "tintColor": "0c0d0b"
+    },
+    {
+      "name": "EeveeSpotifyReincarnated",
+      "bundleIdentifier": "com.spotify.client",
+      "developerName": "jaydenjcpy & faroukbmiled & Mod4",
+      "subtitle": "Spotify with EeveeSpotify",
+      "localizedDescription": "Spotify 9.1.68 with EeveeSpotify 6.6.7, unpatched build for SideStore, AltStore and LiveContainer.",
+      "downloadURL": "https://files.catbox.moe/kcwpzv.ipa",
+      "iconURL": "https://files.catbox.moe/9fgova.JPG",
+      "version": "9.1.68",
+      "versionDate": "2026-08-02",
+      "versionDescription": "EeveeSpotify 6.6.7 unpatched build. Use this build for SideStore/AltStore/LiveContainer.",
+      "size": 130000000,
+      "tintColor": "1DB954"
+    }
+  ]
 }
