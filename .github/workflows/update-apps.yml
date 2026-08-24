@@ -1,0 +1,141 @@
+name: Update apps
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 */6 * * *"
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Sync latest upstream releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .sync
+
+          sync_app() {
+            local repo="$1"
+            local prefix="$2"
+            local name="$3"
+            local bundle="$4"
+            local developer="$5"
+            local subtitle="$6"
+            local description="$7"
+            local tint="$8"
+            local release_json ipa_url tag published asset_name version
+
+            echo "==> Checking $repo"
+            release_json="$(gh api "repos/$repo/releases/latest")"
+            tag="$(jq -r '.tag_name' <<<"$release_json")"
+            published="$(jq -r '.published_at' <<<"$release_json")"
+            asset_name="$(jq -r '[.assets[] | select(.name | endswith(".ipa"))][0].name // empty' <<<"$release_json")"
+            ipa_url="$(jq -r '[.assets[] | select(.name | endswith(".ipa"))][0].browser_download_url // empty' <<<"$release_json")"
+
+            if [[ -z "$ipa_url" ]]; then
+              echo "No IPA asset in latest release of $repo"
+              return 1
+            fi
+
+            version="${tag#v}"
+            echo "Latest: $tag ($asset_name)"
+            curl -fL --retry 3 -o ".sync/${prefix}.ipa" "$ipa_url"
+
+            mkdir -p ".sync/${prefix}"
+            unzip -q -o ".sync/${prefix}.ipa" -d ".sync/${prefix}"
+            plist="$(find ".sync/${prefix}/Payload" -name Info.plist -maxdepth 2 -print -quit)"
+            if [[ -z "$plist" ]]; then
+              echo "Info.plist not found in $name IPA"
+              return 1
+            fi
+
+            actual_bundle="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$plist")"
+            actual_version="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$plist")"
+            actual_build="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$plist")"
+            min_ios="$(/usr/libexec/PlistBuddy -c 'Print :MinimumOSVersion' "$plist" 2>/dev/null || true)"
+            [[ -n "$min_ios" ]] || min_ios="15.0"
+
+            if [[ "$actual_bundle" != "$bundle" ]]; then
+              echo "Bundle ID mismatch: expected $bundle, got $actual_bundle"
+              return 1
+            fi
+
+            release_tag="${prefix}-${actual_version}-${actual_build}"
+            if ! gh release view "$release_tag" >/dev/null 2>&1; then
+              gh release create "$release_tag" ".sync/${prefix}.ipa" \
+                --title "$name $actual_version ($actual_build)" \
+                --notes "Mirrored from https://github.com/$repo/releases/tag/$tag\n\nUpstream asset: $asset_name"
+            else
+              echo "Our release $release_tag already exists"
+            fi
+
+            own_url="https://github.com/${GITHUB_REPOSITORY}/releases/download/${release_tag}/${prefix}.ipa"
+            size="$(stat -c%s ".sync/${prefix}.ipa")"
+
+            jq -n \
+              --arg name "$name" \
+              --arg bundle "$bundle" \
+              --arg developer "$developer" \
+              --arg subtitle "$subtitle" \
+              --arg description "$description" \
+              --arg url "$own_url" \
+              --arg version "$actual_version" \
+              --arg date "${published%%T*}" \
+              --arg build "$actual_build" \
+              --arg minios "$min_ios" \
+              --arg tint "$tint" \
+              --argjson size "$size" \
+              '{name:$name,bundleIdentifier:$bundle,developerName:$developer,subtitle:$subtitle,localizedDescription:$description,downloadURL:$url,version:$version,versionDate:$date,versionDescription:("Build " + $build + "; upstream release " + $version),size:$size,minimumOSVersion:$minios,tintColor:$tint}' \
+              > ".sync/${prefix}.json"
+          }
+
+          sync_app \
+            "Termix-SSH/Mobile" \
+            "termix" \
+            "Termix" \
+            "com.karmaa.termix" \
+            "Termix-SSH" \
+            "SSH, SFTP, RDP, VNC and server management" \
+            "Official Termix mobile client. Requires a compatible Termix server." \
+            "0c0d0b"
+
+          sync_app \
+            "SideloadLabs/EeveeSpotifyReincarnated" \
+            "eevee" \
+            "EeveeSpotifyReincarnated" \
+            "com.spotify.client" \
+            "SideloadLabs" \
+            "Spotify with EeveeSpotify" \
+            "Spotify with EeveeSpotify, unpatched build for SideStore, AltStore and LiveContainer." \
+            "1DB954"
+
+          jq -n \
+            --arg icon "https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/main/icon.png" \
+            --arg website "https://github.com/${GITHUB_REPOSITORY}" \
+            '{name:"ODR Altstore",identifier:"su.odr.altstore",subtitle:"ODR apps for SideStore and LiveContainer",description:"A curated source of iOS apps mirrored from upstream GitHub releases.",iconURL:$icon,website:$website,apps:[inputs]' \
+            < <(cat .sync/termix.json .sync/eevee.json) \
+            | jq '.apps += []' > apps.json
+
+          # The construction above intentionally uses newline JSON inputs; normalize to a proper source.
+          jq -s '{name:"ODR Altstore",identifier:"su.odr.altstore",subtitle:"ODR apps for SideStore and LiveContainer",description:"A curated source of iOS apps mirrored from upstream GitHub releases.",iconURL:"https://raw.githubusercontent.com/" + env.GITHUB_REPOSITORY + "/main/icon.png",website:"https://github.com/" + env.GITHUB_REPOSITORY,apps:.}' .sync/termix.json .sync/eevee.json > apps.json
+
+      - name: Commit source
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add apps.json
+          if git diff --cached --quiet; then
+            echo "No source changes"
+          else
+            git commit -m "Update app versions from upstream GitHub releases"
+            git push
+          fi
