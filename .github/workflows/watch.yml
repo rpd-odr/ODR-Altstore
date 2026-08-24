@@ -1,0 +1,36 @@
+name: Watch App Store versions
+
+on:
+  schedule:
+    - cron: '37 */6 * * *'
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/watch_versions.py'
+      - '.github/workflows/watch.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+      - name: Check App Store versions
+        run: python scripts/watch_versions.py
+      - name: Commit version state
+        run: |
+          git config user.name 'ODR Altstore Bot'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add metadata/store-versions.json
+          if git diff --cached --quiet; then
+            echo 'No version changes.'
+          else
+            git commit -m 'Track upstream app versions'
+            git push
+          fi
