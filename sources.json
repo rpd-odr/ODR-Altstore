@@ -1,0 +1,26 @@
+{
+  "sources": [
+    {
+      "id": "termix",
+      "name": "Termix",
+      "repo": "Termix-SSH/Mobile",
+      "bundleIdentifier": "com.karmaa.termix",
+      "developerName": "Termix-SSH",
+      "subtitle": "SSH, SFTP, RDP, VNC and server management",
+      "localizedDescription": "Official Termix mobile client. Requires a compatible Termix Server.",
+      "iconURL": "https://raw.githubusercontent.com/Termix-SSH/Mobile/main/assets/images/icon.png",
+      "assetPattern": "\\.ipa$"
+    },
+    {
+      "id": "eevee",
+      "name": "EeveeSpotifyReincarnated",
+      "repo": "SideloadLabs/EeveeSpotifyReincarnated",
+      "bundleIdentifier": "com.spotify.client",
+      "developerName": "SideloadLabs / EeveeSpotify contributors",
+      "subtitle": "Spotify with EeveeSpotify",
+      "localizedDescription": "EeveeSpotify build distributed by its upstream project for supported sideloading methods.",
+      "iconURL": "https://raw.githubusercontent.com/SideloadLabs/EeveeSpotifyReincarnated/main/Assets.xcassets/AppIcon.appiconset/AppIcon60x60@2x.png",
+      "assetPattern": "\\.ipa$"
+    }
+  ]
+}
