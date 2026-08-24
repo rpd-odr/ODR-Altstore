@@ -224,9 +224,6 @@ class DecryptDayAdapter(BaseDecryptAdapter):
             if not file_id:
                 raise ProviderError(f"decrypt.day has no free/login-free IPA for version {version}")
 
-            # The download endpoint is protected by the same browser/session context
-            # used by the metadata and /files requests. Keep the relevant headers and
-            # cookies so the subsequent IPA download does not become an anonymous request.
             self._download_headers = self._request_headers(page_url)
             self._download_headers.update({
                 "Accept": "application/octet-stream,application/zip,*/*",
@@ -235,7 +232,11 @@ class DecryptDayAdapter(BaseDecryptAdapter):
             })
             self._download_cookies = dict(client.cookies)
 
-        download_url = f"https://decrypt.day/app/id{app_store_id}/dl/{file_id}"
+        # decrypt.day has historically exposed the same download paths through
+        # ipa.decrypt.day. The latter is the public IPA-facing hostname and is
+        # currently the more reliable download endpoint for non-browser clients.
+        download_host = os.getenv("IPA_DECRYPT_DAY_DOWNLOAD_HOST", "ipa.decrypt.day").strip()
+        download_url = f"https://{download_host}/app/id{app_store_id}/dl/{file_id}"
         self.resolved_version = version
         self.resolved_build = ""
         self._resolved_ipa_url = download_url
