@@ -1,4 +1,4 @@
-name: Auto Update IPA State
+name: Auto Update IPA & Build
 
 on:
   schedule:
@@ -27,22 +27,54 @@ jobs:
       - name: Install dependencies
         run: python -m pip install -r requirements.txt
 
-      - name: Update IPA metadata
+      - name: Validate latest decrypted IPAs and dispatch builds
         env:
           IPA_PROVIDER_TIMEOUT: "60"
+          GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           set -euo pipefail
-          while IFS= read -r builder; do
-            echo "Updating ${builder}"
-            python watcher.py --builder "${builder}" --version latest
+          mkdir -p "$RUNNER_TEMP/ipa-output"
+
+          while IFS=$'\t' read -r builder provider; do
+            [ -n "$builder" ] || continue
+            output_file="$RUNNER_TEMP/ipa-output/${builder}.env"
+            echo "==> Validating ${builder} (${provider})"
+            GITHUB_OUTPUT="$output_file" python watcher.py --builder "$builder" --version latest
+
+            ipa_url="$(awk -F= '$1=="ipa_url" {print substr($0, index($0,"=")+1)}' "$output_file" | tail -1)"
+            verified="$(awk -F= '$1=="verified" {print $2}' "$output_file" | tail -1)"
+            version="$(awk -F= '$1=="version" {print $2}' "$output_file" | tail -1)"
+            sha256="$(awk -F= '$1=="sha256" {print $2}' "$output_file" | tail -1)"
+
+            [ "$verified" = "true" ] || { echo "::error::${builder}: IPA validation failed"; exit 1; }
+            [ -n "$ipa_url" ] || { echo "::error::${builder}: watcher returned no IPA URL"; exit 1; }
+
+            echo "Validated ${builder}: ${version} (${sha256})"
+
+            case "$builder" in
+              ytkace)
+                gh api --method POST "repos/${GITHUB_REPOSITORY}/dispatches" \
+                  -f event_type='ytkace-build' \
+                  -f client_payload[ipa_url]="$ipa_url"
+                ;;
+              ryukgram)
+                gh api --method POST "repos/${GITHUB_REPOSITORY}/dispatches" \
+                  -f event_type='ryukgram-build' \
+                  -f client_payload[decrypted_instagram_url]="$ipa_url" \
+                  -f client_payload[target]='latest'
+                ;;
+              *)
+                echo "No build dispatch configured for ${builder}"
+                ;;
+            esac
           done < <(python - <<'PY'
           import json
           with open("sources.json", encoding="utf-8") as f:
               data = json.load(f)
           for app in data.get("apps", data.get("sources", [])):
               if app.get("builder") and app.get("provider") == "decrypt_ipa":
-                  print(app["builder"])
+                  print(f"{app['builder']}\t{app.get('provider', '')}")
           PY
           )
 
@@ -54,11 +86,11 @@ jobs:
         run: |
           set -euo pipefail
           git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add state.json
           if git diff --cached --quiet; then
             echo "No state changes"
             exit 0
           fi
-          git commit -m "chore: update IPA state"
+          git commit -m "chore: update IPA validation state"
           git push
