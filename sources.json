@@ -2,6 +2,7 @@
   "sources": [
     {
       "id": "termix",
+      "type": "github-release",
       "name": "Termix",
       "repo": "Termix-SSH/Mobile",
       "bundleIdentifier": "com.karmaa.termix",
@@ -9,40 +10,43 @@
       "subtitle": "SSH, SFTP, RDP, VNC and server management",
       "localizedDescription": "Official Termix mobile client.",
       "iconURL": "https://raw.githubusercontent.com/Termix-SSH/Mobile/main/assets/images/icon.png",
-      "mode": "github-release"
+      "assetPattern": "\\.ipa$"
     },
     {
       "id": "eevee",
+      "type": "github-release",
       "name": "EeveeSpotifyReincarnated",
       "repo": "SideloadLabs/EeveeSpotifyReincarnated",
       "bundleIdentifier": "com.spotify.client",
       "developerName": "SideloadLabs / EeveeSpotify contributors",
       "subtitle": "Spotify with EeveeSpotify",
-      "localizedDescription": "EeveeSpotify build from the upstream project.",
+      "localizedDescription": "EeveeSpotify build distributed by its upstream project.",
       "iconURL": "https://raw.githubusercontent.com/SideloadLabs/EeveeSpotifyReincarnated/main/Assets.xcassets/AppIcon.appiconset/AppIcon60x60@2x.png",
-      "mode": "github-release"
+      "assetPattern": "\\.ipa$"
     },
     {
       "id": "ytkace",
+      "type": "builder",
       "name": "YTKACE",
       "repo": "itzzace/ytkace",
       "bundleIdentifier": "com.google.ios.youtube",
       "developerName": "itzzace",
       "subtitle": "YouTube tweak build",
-      "localizedDescription": "YTKACE build pipeline. Upstream workflow requires an input IPA.",
-      "mode": "builder",
-      "watch": "youtube"
+      "localizedDescription": "YTKACE builds published to ODR releases.",
+      "iconURL": "",
+      "workflow": "ytkace.yml"
     },
     {
       "id": "ryukgram",
+      "type": "builder",
       "name": "RyukGram",
       "repo": "faroukbmiled/RyukGram",
       "bundleIdentifier": "com.burbn.instagram",
       "developerName": "faroukbmiled",
       "subtitle": "Instagram tweak build",
-      "localizedDescription": "RyukGram build pipeline. Upstream workflow requires an input IPA.",
-      "mode": "builder",
-      "watch": "instagram"
+      "localizedDescription": "RyukGram builds published to ODR releases.",
+      "iconURL": "",
+      "workflow": "ryukgram.yml"
     }
   ]
 }
