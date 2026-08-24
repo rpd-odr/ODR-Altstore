@@ -30,6 +30,9 @@ jobs:
       - name: Validate latest decrypted IPAs
         env:
           IPA_PROVIDER_TIMEOUT: "60"
+          HTTPS_PROXY: ${{ secrets.IPA_PROVIDER_PROXY }}
+          HTTP_PROXY: ${{ secrets.IPA_PROVIDER_PROXY }}
+          ALL_PROXY: ${{ secrets.IPA_PROVIDER_PROXY }}
         shell: bash
         run: |
           set -euo pipefail
