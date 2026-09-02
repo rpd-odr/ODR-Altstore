@@ -11,14 +11,14 @@
       "bundleIdentifier": "com.karmaa.termix",
       "developerName": "Termix-SSH",
       "subtitle": "SSH, SFTP, RDP, VNC and server management",
-      "localizedDescription": "Official Termix mobile client. Requires a compatible Termix server.",
-      "downloadURL": "https://github.com/Termix-SSH/Mobile/releases/download/release-1.4.0-tag/termix_ios.ipa",
+      "localizedDescription": "Official Termix mobile client.",
       "iconURL": "https://raw.githubusercontent.com/Termix-SSH/Mobile/main/assets/images/icon.png",
-      "version": "1.4.0-tag",
+      "downloadURL": "https://github.com/rpd-odr/odr-alt/releases/download/mirror-termix-release-1.4.0-tag/termix_ios.ipa",
+      "version": "1.4.0",
+      "buildVersion": "119",
       "versionDate": "2026-06-06",
-      "size": 15220034,
-      "versionDescription": "Upstream asset: termix_ios.ipa",
-      "tintColor": "0c0d0b"
+      "versionDescription": "> [!WARNING]\r\n> Requires Termix v2.3.2+\r\n\r\nComplete UI redesign, added remote desktop and Docker support, improved QOL with new host management options, and fixed many bugs.\r\n\r\n| Platform | Download |\r\n|----------|----------|\r\n| **Android** | [APK](https://github.com/Termix-SSH/Mobile/releases/download/release-1.4.0-tag/termix_android.apk) |\r\n| **iOS** | [IPA](https://github.com/Termix-SSH/Mobile/releases/download/release-1.4.0-tag/termix_ios.ipa) |\r\n\r\nUpdate Log:\r\n- Complete UI rewrite to match new Termix UI theme\r\n- New login system with support for passkeys and improved UX\r\n- Support for Docker and Remote Desktop (RDP, VNC, and Telnet)\r\n- Added support for jump hosts, SOCKS5 proxies, override credential username, and force keyboard-interactive host options\r\n- Added support for all the same host authentication types as Termix (warpgate, none auth, etc.)\r\n- Added quick connect feature\r\n- Added snippet management\r\n- Added filter/sort in host viewer\r\n- Added credential and host management (create, edit, and delete hosts and credentials)\r\n- Added session management (view and connect to synced connections between web, desktop, and mobile)\r\n- Added account management features (2FA, Active Sessions, and API keys)\r\n- Added appearance customization (theme and accent color)\r\n- Added app lock (requires pin/biometrics to open app)\r\n- Added font selection for the terminal\r\n\r\nBug Fixes:\r\n- Allowed local network SSL in Android app\r\n- Keep none-auth terminal prompts alive\r\n- Preserve websocket auth context\r\n- Open OIDC in system browser (fixes passkeys)\r\n- Reset terminal input after special keys\r\n- Capture iOS/iPadOS hardware keyboard special keys (tab, f1-12, etc)\r\n- Guard Android user CA trust\r\n- Improved mobile terminal scroll recovery\r\n- Add shift tab hotkey\r\n- Improved iOS terminal scroll speed",
+      "size": 15220034
     },
     {
       "name": "EeveeSpotifyReincarnated",
